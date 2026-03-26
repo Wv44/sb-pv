@@ -1017,10 +1017,9 @@ async function getUUID(username) {
 }
 
 async function hypixelFetch(path) {
-  const target = `https://api.hypixel.net/v2${path}`;
-  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`, {
-    headers: { 'API-Key': API_KEY }
-  });
+  const separator = path.includes('?') ? '&' : '?';
+  const target = `https://api.hypixel.net/v2${path}${separator}key=${API_KEY}`;
+  const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(target)}`);
   if (res.status === 403) throw new Error('Invalid API key. Click the key icon to re-enter it.');
   if (res.status === 429) throw new Error('Rate limited by Hypixel. Please wait a moment.');
   if (!res.ok) throw new Error(`Hypixel API error (${res.status}).`);
