@@ -1135,7 +1135,7 @@ function populateGeneral(d, p, sbLevel) {
     { key:'vampire',  name:'Riftstalker Bloodfiend', color:'#ff55ff' },
   ];
   document.getElementById('slayerCards').innerHTML = slayers.map(s => {
-    const boss = d.slayer_bosses?.[s.key];
+    const boss = d.slayer?.[s.key];
     const xp = boss?.xp || 0;
     const thresholds = SLAYER_LEVELS[s.key] || SLAYER_LEVELS.zombie;
     let lv = 0; for (let i=0;i<thresholds.length;i++) { if(xp>=thresholds[i]) lv=i+1; }
@@ -1156,7 +1156,7 @@ function populateCombat(d) {
   const cata = dung.dungeon_types?.catacombs || {};
   const cataXp = cata.experience || 0;
   const cataLevel = computeLevel(cataXp, CATA_XP);
-  const secrets = dung.secrets || d.player_stats?.dungeons?.total_secrets_found || 0;
+  const secrets = d.player_stats?.dungeons?.total_secrets_found || cata.total_secrets_found || 0;
   const classes = dung.player_classes || {};
   const classAvg = Object.values(classes).length ? (Object.values(classes).reduce((a,b)=>a+(computeLevel(b.experience||0,CATA_XP)),0)/Object.values(classes).length).toFixed(1) : '—';
 
@@ -1438,17 +1438,19 @@ function populateCollections(d) {
 // ─── MINING ───
 function populateMining(d) {
   const mc = d.mining_core || {};
-  const hotmLevel = mc.tier || 0;
-  const mithrilPowder = (mc.powder_mithril || 0) + (mc.powder_mithril_total || 0);
-  const gemPowder = (mc.powder_gemstone || 0) + (mc.powder_gemstone_total || 0);
-  const glacitePowder = (mc.powder_glacite || 0) + (mc.powder_glacite_total || 0);
+  const hotmLevel = mc.tokens_spent !== undefined
+    ? Math.min(10, Math.floor((mc.tokens_spent || 0) / 6) + 1)
+    : Object.values(mc.nodes || {}).filter(v => v > 0).length > 0 ? '?' : 0;
+  const mithrilPowder = mc.powder_mithril_total || 0;
+  const gemPowder = mc.powder_gemstone_total || 0;
+  const glacitePowder = mc.powder_glacite_total || 0;
 
   document.getElementById('miningCards').innerHTML = `
     ${card('HotM Level', hotmLevel, '', 'var(--legendary)')}
-    ${card('Mithril Powder', fmt(mc.powder_mithril||0), 'total: '+fmt(mithrilPowder), 'var(--divine)')}
-    ${card('Gemstone Powder', fmt(mc.powder_gemstone||0), 'total: '+fmt(gemPowder), 'var(--mythic)')}
+    ${card('Mithril Powder', fmt(mc.powder_mithril||0), 'lifetime: '+fmt(mithrilPowder), 'var(--divine)')}
+    ${card('Gemstone Powder', fmt(mc.powder_gemstone||0), 'lifetime: '+fmt(gemPowder), 'var(--mythic)')}
+    ${card('Glacite Powder', fmt(mc.powder_glacite||0), 'lifetime: '+fmt(glacitePowder), '#aaffaa')}
   `;
-
   document.getElementById('powderBars').innerHTML = [
     { name:'Mithril',   color:'#55ffff', val: mc.powder_mithril||0,   max:500000 },
     { name:'Gemstone',  color:'#ff55ff', val: mc.powder_gemstone||0,  max:500000 },
@@ -1461,7 +1463,7 @@ function populateMining(d) {
 
   // Crystals
   const crystals = mc.crystals || {};
-  const crystalDefs = ['jade','amber','topaz','amethyst','sapphire','ruby','jasper','opal','aquamarine','citrine','onyx'];
+  const crystalDefs = ['jade','amber','topaz','amethyst','sapphire','ruby','jasper','opal','aquamarine','citrine','onyx','peridot'];
   document.getElementById('crystalGrid').innerHTML = crystalDefs.map(c => {
     const state = crystals[`${c}_crystal`]?.state || 'NOT_FOUND';
     const color = state === 'PLACED' ? '#55ff55' : state === 'FOUND' ? 'var(--legendary)' : 'var(--text-dim)';
@@ -1550,7 +1552,7 @@ function populateFishing(d) {
 // ─── FARMING ───
 function populateFarming(d, gardenData) {
   const farmSkill = computeLevel(d.player_data?.experience?.SKILL_FARMING||0, SKILL_XP);
-  const jacob = d.jacob2 || {};
+  const jacob = d.jacobs_contest || {};
   const medals = jacob.medals_inv || {};
   const gardenExp = gardenData?.garden_experience || 0;
   const gardenLevel = computeLevel(gardenExp, [100,300,750,1500,4000,8000,12000,20000,25000,30000,40000,60000,100000]);
