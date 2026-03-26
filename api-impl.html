@@ -1,0 +1,2069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkyBlock Profile Viewer</title>
+<!-- NBT decoder for inventory items -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<style>
+:root {
+  --bg: #0b0c0e;
+  --panel: #13141a;
+  --panel2: #1a1b22;
+  --border: #25262e;
+  --border2: #2e2f3a;
+  --text-dim: #7c8396;
+  --text-mid: #a8afc4;
+  --text-bright: #e8eaf2;
+  --accent: #6366f1;
+  --accent-dim: rgba(99,102,241,0.15);
+
+  --common: #aaaaaa;
+  --uncommon: #55ff55;
+  --rare: #5555ff;
+  --epic: #aa00aa;
+  --legendary: #ffaa00;
+  --mythic: #ff55ff;
+  --divine: #55ffff;
+  --special: #ff5555;
+
+  --skill-combat: #ff5555;
+  --skill-mining: #55ffff;
+  --skill-alchemy: #ffff55;
+  --skill-enchanting: #ff55ff;
+  --skill-farming: #55ff55;
+  --skill-fishing: #5588ff;
+  --skill-foraging: #aa7733;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text-bright);
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* ── API KEY MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(8px);
+  z-index: 500;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.3s;
+}
+.modal-overlay.hidden { opacity: 0; pointer-events: none; }
+
+.modal-box {
+  background: var(--panel2);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 32px 36px;
+  width: 440px;
+  box-shadow: 0 40px 80px rgba(0,0,0,0.7);
+}
+.modal-logo {
+  font-size: 28px; font-weight: 900; letter-spacing: -0.5px;
+  color: var(--legendary); margin-bottom: 6px;
+}
+.modal-logo span { color: var(--mythic); }
+.modal-subtitle {
+  font-size: 12px; color: var(--text-dim); margin-bottom: 24px;
+  line-height: 1.6;
+}
+.modal-label {
+  font-size: 10px; font-weight: 800; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+  display: block;
+}
+.modal-input {
+  width: 100%; height: 42px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border2);
+  border-radius: 9px;
+  color: var(--text-bright);
+  font-size: 13px; font-weight: 600;
+  padding: 0 14px;
+  outline: none; font-family: monospace;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  margin-bottom: 14px;
+}
+.modal-input:focus {
+  border-color: rgba(99,102,241,0.6);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.modal-btn {
+  width: 100%; height: 42px;
+  background: var(--accent);
+  border: none; border-radius: 9px;
+  color: #fff; font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, transform 0.1s;
+}
+.modal-btn:hover { background: #4f52e0; }
+.modal-btn:active { transform: scale(0.98); }
+.modal-hint {
+  font-size: 10px; color: var(--text-dim);
+  margin-top: 12px; text-align: center; line-height: 1.6;
+}
+.modal-hint a { color: #a5b4fc; text-decoration: none; }
+.modal-hint a:hover { text-decoration: underline; }
+.modal-error {
+  font-size: 11px; color: #ff8585; margin-bottom: 10px;
+  display: none;
+}
+.modal-error.visible { display: block; }
+
+/* ── TOPBAR ── */
+.topbar {
+  width: 1280px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 0 10px 0; flex-shrink: 0;
+}
+.search-wrap { position: relative; flex: 1; max-width: 340px; }
+.search-icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: var(--text-dim); transition: color 0.15s;
+  display: flex; align-items: center;
+}
+.search-wrap:focus-within .search-icon { color: #a5b4fc; }
+.search-input {
+  width: 100%; height: 38px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border); border-radius: 9px;
+  color: var(--text-bright); font-size: 13px; font-weight: 600;
+  padding: 0 12px 0 38px; outline: none;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+.search-input::placeholder { color: var(--text-dim); font-weight: 500; }
+.search-input:focus {
+  border-color: rgba(99,102,241,0.6);
+  background: rgba(99,102,241,0.06);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.search-btn {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  height: 27px; padding: 0 10px;
+  background: var(--accent); border: none; border-radius: 6px;
+  color: #fff; font-size: 11px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, transform 0.1s;
+  display: flex; align-items: center; gap: 5px;
+}
+.search-btn:hover { background: #4f52e0; }
+.search-btn:active { transform: translateY(-50%) scale(0.96); }
+
+/* ── PROFILE SELECTOR ── */
+.profile-select-wrap { position: relative; }
+.profile-select-btn {
+  height: 38px; padding: 0 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border); border-radius: 9px;
+  color: var(--text-bright); font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; gap: 8px;
+  transition: border-color 0.15s, background 0.15s;
+  white-space: nowrap; min-width: 160px; outline: none;
+}
+.profile-select-btn:hover, .profile-select-btn.open {
+  border-color: rgba(99,102,241,0.5); background: rgba(99,102,241,0.06);
+}
+.profile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--uncommon); flex-shrink: 0; box-shadow: 0 0 5px rgba(85,255,85,0.5); }
+.profile-dot.inactive { background: var(--text-dim); box-shadow: none; }
+.profile-label { flex: 1; text-align: left; }
+.profile-chevron { color: var(--text-dim); transition: transform 0.2s; flex-shrink: 0; }
+.profile-select-btn.open .profile-chevron { transform: rotate(180deg); }
+.profile-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%;
+  background: var(--panel2); border: 1px solid var(--border2); border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; z-index: 100;
+  display: none; animation: dropDown 0.15s ease;
+}
+.profile-dropdown.open { display: block; }
+@keyframes dropDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+.dropdown-header { padding: 9px 14px 7px; font-size: 9px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.dropdown-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: background 0.1s; color: var(--text-mid);
+}
+.dropdown-item:hover { background: rgba(255,255,255,0.04); color: var(--text-bright); }
+.dropdown-item.selected { background: var(--accent-dim); color: #a5b4fc; }
+.dropdown-item .item-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.item-badge { margin-left: auto; font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: rgba(85,255,85,0.1); color: var(--uncommon); border: 1px solid rgba(85,255,85,0.2); }
+
+/* ── COOP SELECTOR ── */
+.coop-wrap { position: relative; }
+.coop-btn {
+  height: 38px; padding: 0 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border); border-radius: 9px;
+  color: var(--text-bright); font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; gap: 9px;
+  transition: border-color 0.15s; white-space: nowrap; outline: none;
+}
+.coop-btn:hover, .coop-btn.open { border-color: rgba(85,255,255,0.4); background: rgba(85,255,255,0.04); }
+.coop-avatar { width: 22px; height: 22px; border-radius: 4px; overflow: hidden; flex-shrink: 0; background: var(--border2); }
+.coop-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.coop-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  background: var(--panel2); border: 1px solid var(--border2); border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; z-index: 100;
+  display: none; animation: dropDown 0.15s ease; min-width: 200px;
+}
+.coop-dropdown.open { display: block; }
+.coop-member {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer; transition: background 0.1s;
+  color: var(--text-mid); font-size: 12px; font-weight: 700;
+}
+.coop-member:hover { background: rgba(255,255,255,0.04); color: var(--text-bright); }
+.coop-member.selected { background: rgba(85,255,255,0.06); color: var(--divine); }
+.member-avatar { width: 26px; height: 26px; border-radius: 4px; overflow: hidden; background: var(--border2); flex-shrink: 0; }
+.member-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.member-info { flex: 1; min-width: 0; }
+.member-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member-level { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+.member-you { font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: rgba(85,255,255,0.1); color: var(--divine); border: 1px solid rgba(85,255,255,0.2); }
+
+/* ── LOADER ── */
+.loader-overlay {
+  position: fixed; inset: 0;
+  background: rgba(11,12,14,0.85);
+  backdrop-filter: blur(4px); z-index: 200;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.loader-overlay.visible { opacity: 1; pointer-events: all; }
+.loader-spinner { animation: spinnerRotate 0.9s linear infinite; }
+@keyframes spinnerRotate { to { transform: rotate(360deg); } }
+.loader-text { font-size: 13px; font-weight: 700; color: var(--text-mid); }
+.loader-sub { font-size: 11px; color: var(--text-dim); margin-top: -8px; }
+
+/* ── ERROR BANNER ── */
+.error-banner {
+  position: absolute; top: 0; left: 50%;
+  transform: translateX(-50%) translateY(-60px);
+  background: rgba(255,85,85,0.12); border: 1px solid rgba(255,85,85,0.35);
+  border-radius: 10px; padding: 11px 18px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; font-weight: 700; color: #ff8585;
+  white-space: nowrap; transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s;
+  opacity: 0; z-index: 300; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.error-banner.visible { transform: translateX(-50%) translateY(10px); opacity: 1; }
+.error-dismiss { margin-left: 8px; cursor: pointer; color: rgba(255,133,133,0.6); padding: 2px 4px; border-radius: 4px; transition: color 0.15s; font-size: 14px; }
+.error-dismiss:hover { color: #ff5555; }
+
+/* ── APP SHELL ── */
+.app {
+  width: 1280px; height: 800px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  display: flex; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03);
+  position: relative;
+}
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px;
+  color: var(--text-dim);
+}
+.empty-icon { font-size: 48px; opacity: 0.3; }
+.empty-title { font-size: 15px; font-weight: 700; color: var(--text-mid); }
+.empty-sub { font-size: 12px; color: var(--text-dim); }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: 230px; background: rgba(0,0,0,0.2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.player-card { padding: 24px 16px 20px; text-align: center; border-bottom: 1px solid var(--border); }
+.player-skin { width: 96px; height: 144px; margin: 0 auto 12px; background-size: contain; background-repeat: no-repeat; background-position: center; filter: drop-shadow(0 4px 16px rgba(0,0,0,0.6)); }
+.player-name { font-size: 16px; font-weight: 800; color: var(--legendary); letter-spacing: 0.4px; }
+.player-rank { font-size: 10px; font-weight: 700; color: var(--special); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+.player-level { display: inline-flex; align-items: center; gap: 5px; margin-top: 7px; padding: 3px 10px; background: rgba(85,255,255,0.08); color: var(--divine); border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid rgba(85,255,255,0.15); }
+
+.nav { flex: 1; overflow-y: auto; padding: 12px 10px; }
+.nav::-webkit-scrollbar { width: 3px; }
+.nav::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  color: var(--text-dim); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.6px; text-transform: uppercase;
+  transition: all 0.15s; margin-bottom: 2px; user-select: none;
+}
+.nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text-bright); }
+.nav-item.active { background: var(--accent-dim); color: #a5b4fc; border: 1px solid rgba(165,180,252,0.2); }
+.nav-icon { width: 18px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: inherit; }
+.nav-icon svg { display: block; color: inherit; }
+
+/* ── MAIN ── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.page { display: none; flex: 1; flex-direction: column; overflow: hidden; animation: fadeUp 0.18s ease; }
+.page.active { display: flex; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+.page-body { flex: 1; overflow-y: auto; padding: 28px 32px; }
+.page-body::-webkit-scrollbar { width: 5px; }
+.page-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
+
+/* ── INNER TABS ── */
+.inner-tabs { display: flex; gap: 2px; padding: 14px 32px 0; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.1); flex-shrink: 0; }
+.inner-tab { padding: 9px 18px 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-dim); cursor: pointer; border-radius: 8px 8px 0 0; transition: all 0.15s; user-select: none; border-bottom: 2px solid transparent; }
+.inner-tab:hover { color: var(--text-bright); background: rgba(255,255,255,0.03); }
+.inner-tab.active { color: #a5b4fc; border-bottom-color: var(--accent); background: var(--accent-dim); }
+.inner-page { display: none; animation: fadeUp 0.15s ease; }
+.inner-page.active { display: block; }
+
+/* ── SECTION TITLES ── */
+.section-title { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+.section-title::after { content:''; flex:1; height:1px; background: var(--border); }
+
+/* ── GRIDS ── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+/* ── CARDS ── */
+.card { background: rgba(255,255,255,0.025); border: 1px solid var(--border); border-radius: 10px; padding: 15px 16px; }
+.card-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+.card-value { font-size: 16px; font-weight: 700; margin-top: 5px; color: var(--text-bright); }
+.card-sub { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+/* ── SKILL BARS ── */
+.skill-row { display: flex; align-items: center; gap: 14px; margin-bottom: 11px; }
+.skill-row:last-child { margin-bottom: 0; }
+.skill-label { width: 120px; font-size: 12px; font-weight: 700; color: var(--text-bright); flex-shrink: 0; }
+.skill-track { flex:1; height:9px; background: rgba(255,255,255,0.05); border-radius: 5px; overflow:hidden; border: 1px solid var(--border); }
+.skill-fill { height:100%; border-radius:5px; transition: width 0.6s ease; }
+.skill-lv { width:40px; text-align:right; font-size:12px; font-weight:800; color: var(--text-dim); }
+
+/* ── SLAYER CARDS ── */
+.slayer-card { background: rgba(255,255,255,0.025); border: 1px solid var(--border); border-radius: 10px; padding: 15px 16px; display: flex; flex-direction: column; gap: 8px; }
+.slayer-header { display: flex; justify-content: space-between; align-items: center; }
+.slayer-name { font-size: 13px; font-weight: 800; }
+.slayer-lv { font-size: 20px; font-weight: 900; }
+.slayer-bar-track { height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
+.slayer-bar-fill { height:100%; border-radius:3px; transition: width 0.6s ease; }
+.slayer-xp { font-size: 10px; color: var(--text-dim); }
+
+/* ── TABLES ── */
+.data-table { width:100%; border-collapse:collapse; }
+.data-table th { text-align:left; padding: 9px 12px; font-size:10px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.data-table td { padding: 11px 12px; font-size:12px; font-weight:600; border-bottom: 1px solid rgba(255,255,255,0.025); color: var(--text-mid); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: rgba(255,255,255,0.015); }
+
+/* ── RARITY COLORS ── */
+.common    { color: var(--common); }
+.uncommon  { color: var(--uncommon); }
+.rare      { color: var(--rare); }
+.epic      { color: var(--epic); }
+.legendary { color: var(--legendary); }
+.mythic    { color: var(--mythic); }
+.divine    { color: var(--divine); }
+
+/* ── BADGES ── */
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.badge-green  { background: rgba(85,255,85,0.1);   color: #55ff55; border: 1px solid rgba(85,255,85,0.2); }
+.badge-gold   { background: rgba(255,170,0,0.1);   color: var(--legendary); border: 1px solid rgba(255,170,0,0.2); }
+.badge-cyan   { background: rgba(85,255,255,0.1);  color: var(--divine); border: 1px solid rgba(85,255,255,0.2); }
+.badge-purple { background: rgba(165,180,252,0.1); color: #a5b4fc; border: 1px solid rgba(165,180,252,0.2); }
+.badge-red    { background: rgba(255,85,85,0.1);   color: #ff5555; border: 1px solid rgba(255,85,85,0.2); }
+
+/* ── COLLECTIONS ── */
+.coll-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 8px; }
+.coll-item { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; }
+.coll-name { font-size: 11px; font-weight: 700; color: var(--text-bright); }
+.coll-tier { font-size: 10px; font-weight: 800; }
+.coll-bar-track { height: 5px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow:hidden; }
+.coll-bar-fill { height:100%; border-radius:3px; }
+.coll-amount { font-size: 10px; color: var(--text-dim); }
+
+/* ── HOTM ── */
+.hotm-grid { display: grid; grid-template-columns: repeat(7, 60px); gap: 4px; justify-content: center; }
+.hotm-node { width:60px; min-height:55px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:9px; font-weight:700; text-align:center; padding: 4px 2px; transition: 0.15s; }
+.hotm-node.unlocked { border-color: rgba(99,102,241,0.5); background: rgba(99,102,241,0.1); color: #a5b4fc; }
+.hotm-node.maxed { border-color: rgba(255,170,0,0.5); background: rgba(255,170,0,0.1); color: var(--legendary); }
+.hotm-node.locked { opacity: 0.35; }
+.hotm-empty { opacity:0; pointer-events:none; width:60px; }
+.node-icon { font-size:16px; margin-bottom:2px; }
+.node-lv { font-size:8px; color: var(--text-dim); }
+
+/* ── PETS ── */
+.pet-card { background: rgba(255,255,255,0.025); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; }
+.pet-icon { font-size: 22px; flex-shrink:0; width:42px; height:42px; display:flex; align-items:center; justify-content:center; border-radius:8px; background: rgba(255,255,255,0.04); overflow:hidden; }
+.pet-icon img { width:100%; height:100%; object-fit:contain; }
+.pet-info { flex:1; }
+.pet-name { font-size: 13px; font-weight: 800; }
+.pet-level { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.pet-held { font-size: 10px; margin-top: 4px; color: var(--divine); }
+.pet-active-tag { font-size:9px; font-weight:700; padding: 2px 7px; border-radius:4px; background: rgba(85,255,85,0.1); color:#55ff55; border:1px solid rgba(85,255,85,0.2); margin-left:auto; align-self:flex-start; }
+
+/* ── MUSEUM ── */
+.museum-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 10px; }
+.museum-item { display:flex; align-items:center; gap:10px; background: rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+.museum-check { font-size:14px; flex-shrink:0; }
+.museum-name { font-size:12px; font-weight:600; }
+.museum-donated { border-left: 3px solid #55ff55; }
+.museum-missing { border-left: 3px solid rgba(255,85,85,0.4); opacity:0.6; }
+
+/* ── CRYSTALS ── */
+.crystal-grid { display:flex; flex-wrap:wrap; gap:10px; }
+.crystal-item { display:flex; align-items:center; gap:8px; background: rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px; padding:8px 14px; }
+.crystal-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.crystal-name { font-size:12px; font-weight:600; }
+.crystal-status { font-size:10px; font-weight:700; }
+
+/* ── BESTIARY ── */
+.bestiary-islands { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+.island-btn { padding:7px 14px; border-radius:20px; cursor:pointer; font-size:11px; font-weight:700; border: 1px solid var(--border); color: var(--text-dim); transition:0.15s; user-select:none; }
+.island-btn:hover { border-color: rgba(255,255,255,0.2); color:var(--text-bright); }
+.island-btn.active { background: var(--accent-dim); color:#a5b4fc; border-color: rgba(165,180,252,0.3); }
+.bestiary-list { display:none; }
+.bestiary-list.active { display:block; }
+
+/* ── FACTION ── */
+.faction-wrap { display:flex; flex-direction:column; gap:8px; }
+.faction-row { display:flex; align-items:center; gap:14px; }
+.faction-name { width:80px; font-size:12px; font-weight:700; }
+.faction-track { flex:1; height:12px; background: rgba(255,255,255,0.05); border-radius:6px; overflow:hidden; border:1px solid var(--border); }
+.faction-fill { height:100%; border-radius:6px; }
+.faction-rep { font-size:11px; font-weight:700; width:80px; text-align:right; }
+
+/* ── TROPHY FISH ── */
+.trophy-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap:8px; }
+.trophy-item { background: rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px; padding:10px 13px; display:flex; flex-direction:column; gap:4px; }
+.trophy-name { font-size:11px; font-weight:700; }
+.trophy-counts { display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; }
+.trophy-tier { font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; }
+.t-bronze  { background:rgba(180,100,40,0.2);  color:#c87533; }
+.t-silver  { background:rgba(192,192,192,0.2); color:#c0c0c0; }
+.t-gold    { background:rgba(255,215,0,0.2);   color:#ffd700; }
+.t-diamond { background:rgba(85,255,255,0.15); color:var(--divine); }
+
+/* ── CHOC FACTORY ── */
+.choc-header { background: linear-gradient(135deg, rgba(139,69,19,0.3), rgba(101,47,12,0.15)); border: 1px solid rgba(160,82,45,0.3); border-radius: 10px; padding: 16px 20px; margin-bottom:20px; display:flex; gap:20px; align-items:center; }
+.choc-stat { text-align:center; }
+.choc-num { font-size:20px; font-weight:900; color:#cd853f; }
+.choc-lbl { font-size:9px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin-top:2px; }
+.choc-div { width:1px; height:40px; background:var(--border); }
+
+/* ── INVENTORY ── */
+.inv-grid { display: grid; grid-template-columns: repeat(9, 44px); gap: 3px; }
+.inv-slot { width:44px; height:44px; background: rgba(0,0,0,0.35); border: 1px solid var(--border2); border-radius: 5px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; cursor:default; position:relative; overflow:hidden; transition: border-color 0.15s; }
+.inv-slot:hover { border-color: rgba(255,255,255,0.2); }
+.inv-slot.empty { opacity:0.2; }
+.inv-slot img { width:32px; height:32px; object-fit:contain; image-rendering: pixelated; }
+.inv-slot .item-count { position:absolute; bottom:2px; right:4px; font-size:9px; font-weight:800; color:white; text-shadow:1px 1px 0 #000; }
+.inv-slot .item-name-tooltip { display:none; position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--border2); border-radius:6px; padding:4px 8px; font-size:10px; white-space:nowrap; z-index:10; pointer-events:none; }
+.inv-slot:hover .item-name-tooltip { display:block; }
+.rarity-mythic    { border-color: rgba(255,85,255,0.4);  box-shadow: 0 0 6px rgba(255,85,255,0.15) inset; }
+.rarity-legendary { border-color: rgba(255,170,0,0.4);   box-shadow: 0 0 6px rgba(255,170,0,0.12) inset; }
+.rarity-epic      { border-color: rgba(170,0,170,0.5); }
+.rarity-rare      { border-color: rgba(85,85,255,0.5); }
+.armor-col { display:flex; flex-direction:column; gap:4px; }
+
+/* ── INFO ROWS ── */
+.info-row { display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid rgba(255,255,255,0.03); font-size:12px; }
+.info-row:last-child { border-bottom:none; }
+.info-key { color: var(--text-dim); font-weight:600; }
+.info-val { font-weight:700; color: var(--text-bright); }
+
+/* ── DOJO ── */
+.s-rank { color:#55ff55; } .a-rank { color:#ffaa00; } .b-rank { color:#55ffff; }
+
+/* ── LAYOUT HELPERS ── */
+.mb8  { margin-bottom:8px; }
+.mb14 { margin-bottom:14px; }
+.mb20 { margin-bottom:20px; }
+.mb26 { margin-bottom:26px; }
+.two-col   { display:grid; grid-template-columns:1fr 1fr;     gap:24px; align-items:start; }
+.three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; align-items:start; }
+
+@keyframes shake {
+  0%,100% { transform:translateX(0); }
+  20% { transform:translateX(-6px); }
+  40% { transform:translateX(6px); }
+  60% { transform:translateX(-4px); }
+  80% { transform:translateX(4px); }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════ API KEY MODAL ════════ -->
+<div class="modal-overlay" id="apiModal">
+  <div class="modal-box">
+    <div class="modal-logo">Sky<span>Block</span> Viewer</div>
+    <div class="modal-subtitle">Enter your Hypixel API key to get started. Your key is stored only in memory for this session and never sent anywhere except directly to <strong>api.hypixel.net</strong>.</div>
+    <label class="modal-label" for="apiKeyInput">Hypixel API Key</label>
+    <div class="modal-error" id="modalError">Invalid API key — please check and try again.</div>
+    <input class="modal-input" id="apiKeyInput" type="password" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter') saveApiKey()"/>
+    <button class="modal-btn" onclick="saveApiKey()">Continue</button>
+    <div class="modal-hint">
+      Don't have a key? Get one free at <a href="https://developer.hypixel.net/dashboard" target="_blank">developer.hypixel.net</a><br>
+      <span style="opacity:0.6">Your key is never stored — it lives in memory only.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ LOADER ════════ -->
+<div class="loader-overlay" id="loaderOverlay">
+  <svg class="loader-spinner" width="48" height="48" viewBox="0 0 48 48" fill="none">
+    <circle cx="24" cy="24" r="20" stroke="rgba(99,102,241,0.15)" stroke-width="3"/>
+    <path d="M24 4 A20 20 0 0 1 44 24" stroke="url(#sg)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="24" cy="24" r="2.5" fill="#6366f1"/>
+    <defs><linearGradient id="sg" x1="24" y1="4" x2="44" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#6366f1" stop-opacity="0.2"/><stop offset="100%" stop-color="#a5b4fc"/></linearGradient></defs>
+  </svg>
+  <div class="loader-text" id="loaderText">Fetching profile…</div>
+  <div class="loader-sub" id="loaderSub">Connecting to Hypixel API</div>
+</div>
+
+<!-- ════════ ERROR BANNER ════════ -->
+<div class="error-banner" id="errorBanner">
+  <span>⚠</span>
+  <span id="errorText">Something went wrong.</span>
+  <span class="error-dismiss" onclick="dismissError()">×</span>
+</div>
+
+<!-- ════════ TOPBAR ════════ -->
+<div class="topbar">
+  <div class="search-wrap">
+    <span class="search-icon">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/><line x1="10.4" y1="10.4" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </span>
+    <input class="search-input" id="usernameInput" type="text" placeholder="Search Minecraft username…" spellcheck="false" autocomplete="off" onkeydown="if(event.key==='Enter') triggerSearch()"/>
+    <button class="search-btn" onclick="triggerSearch()">
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5H9M9 5.5L6 2.5M9 5.5L6 8.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Go
+    </button>
+  </div>
+
+  <div class="profile-select-wrap" id="profileSelectWrap">
+    <button class="profile-select-btn" id="profileSelectBtn" onclick="toggleDropdown('profileDropdown',this)">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="color:var(--text-dim);flex-shrink:0"><path d="M2 5L6.5 1L11 5L6.5 12L2 5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/><line x1="2" y1="5" x2="11" y2="5" stroke="currentColor" stroke-width="1" opacity="0.5"/></svg>
+      <span class="profile-dot" id="profileActiveDot"></span>
+      <span class="profile-label" id="profileLabel">— no profile —</span>
+      <svg class="profile-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="profile-dropdown" id="profileDropdown">
+      <div class="dropdown-header">Profiles</div>
+    </div>
+  </div>
+
+  <div class="coop-wrap" id="coopWrap">
+    <button class="coop-btn" id="coopBtn" onclick="toggleDropdown('coopDropdown',this)">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="color:var(--divine);flex-shrink:0"><circle cx="5" cy="4.5" r="2.2" stroke="currentColor" stroke-width="1.3"/><path d="M1 11.5C1 9.3 2.8 7.5 5 7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="10" cy="5.5" r="2" stroke="currentColor" stroke-width="1.3" opacity="0.6"/><path d="M7.5 11.5C7.5 9.8 8.6 8.3 10 7.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.6"/></svg>
+      <div class="coop-avatar" id="coopCurrentAvatar"></div>
+      <span id="coopCurrentName" style="font-size:12px;font-weight:700">—</span>
+      <svg class="profile-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="coop-dropdown" id="coopDropdown">
+      <div class="dropdown-header">Co-op Members</div>
+    </div>
+  </div>
+
+  <div style="flex:1"></div>
+  <div style="font-size:10px;color:var(--text-dim);font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:6px">
+    <span id="statusDot" style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);display:inline-block"></span>
+    <span id="lastUpdated">No data loaded</span>
+  </div>
+</div>
+
+<!-- ════════ APP SHELL ════════ -->
+<div class="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="player-card">
+      <div class="player-skin" id="playerSkin"></div>
+      <div class="player-name" id="playerName">—</div>
+      <div class="player-rank" id="playerRank"></div>
+      <div class="player-level" id="playerLevel">✦ SkyBlock Level —</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" onclick="showPage('general',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5L1.5 7V14.5H5.5V10H10.5V14.5H14.5V7L8 1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/></svg></span>General</div>
+      <div class="nav-item" onclick="showPage('combat',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="14" y1="2" x2="2" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>Combat</div>
+      <div class="nav-item" onclick="showPage('inventory',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="6" width="13" height="8.5" rx="1.2" stroke="currentColor" stroke-width="1.4"/><path d="M5 6V4.5C5 3.12 6.34 2 8 2C9.66 2 11 3.12 11 4.5V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>Inventory</div>
+      <div class="nav-item" onclick="showPage('collections',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="8.5" width="5.5" height="6" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8.5" width="5.5" height="6" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="1.5" width="6" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg></span>Collections</div>
+      <div class="nav-item" onclick="showPage('mine',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="7" y="5" width="2" height="10" rx="0.5" fill="currentColor" opacity="0.7"/><path d="M2 7.5C2 4.5 5 2.5 8 2.5C11 2.5 14 4.5 14 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.8"/></svg></span>Mining</div>
+      <div class="nav-item" onclick="showPage('fishing',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 2C3 2 3.5 5 6 6.5C8.5 8 11 7 12 9C13 11 11.5 13 11.5 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/><circle cx="11.5" cy="13.5" r="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/></svg></span>Fishing</div>
+      <div class="nav-item" onclick="showPage('farming',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="8" y1="14.5" x2="8" y2="3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8 10C8 10 5 9 4 6.5C6.5 6 8 8 8 10Z" fill="currentColor" opacity="0.75"/><path d="M8 7C8 7 11 6 12 3.5C9.5 3 8 5 8 7Z" fill="currentColor" opacity="0.75"/></svg></span>Farming</div>
+      <div class="nav-item" onclick="showPage('pets',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="5.5" cy="4" r="1.4" fill="currentColor" opacity="0.85"/><circle cx="10.5" cy="4" r="1.4" fill="currentColor" opacity="0.85"/><circle cx="3" cy="7.5" r="1.2" fill="currentColor" opacity="0.7"/><circle cx="13" cy="7.5" r="1.2" fill="currentColor" opacity="0.7"/><path d="M8 8C5 8 4 10 4.5 12C5 14 7 14.5 8 14.5C9 14.5 11 14 11.5 12C12 10 11 8 8 8Z" fill="currentColor" opacity="0.85"/></svg></span>Pets</div>
+      <div class="nav-item" onclick="showPage('museum',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="13" width="14" height="2" rx="0.5" fill="currentColor" opacity="0.75"/><rect x="2" y="1" width="12" height="2" rx="0.5" fill="currentColor" opacity="0.75"/><rect x="3.5" y="3" width="1.5" height="10" rx="0.5" fill="currentColor" opacity="0.7"/><rect x="7.25" y="3" width="1.5" height="10" rx="0.5" fill="currentColor" opacity="0.7"/><rect x="11" y="3" width="1.5" height="10" rx="0.5" fill="currentColor" opacity="0.7"/></svg></span>Museum</div>
+      <div class="nav-item" onclick="showPage('chocolate',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><line x1="6" y1="3" x2="6" y2="13" stroke="currentColor" stroke-width="1" opacity="0.5"/><line x1="10" y1="3" x2="10" y2="13" stroke="currentColor" stroke-width="1" opacity="0.5"/><line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" stroke-width="1" opacity="0.5"/></svg></span>Choc Factory</div>
+      <div class="nav-item" onclick="showPage('rift',this)"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5L14.5 8L8 14.5L1.5 8L8 1.5Z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.5" fill="currentColor" opacity="0.8"/></svg></span>Rift</div>
+    </nav>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="mainContent">
+    <!-- Empty state shown before first search -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">⛏️</div>
+      <div class="empty-title">Search for a player to get started</div>
+      <div class="empty-sub">Enter a Minecraft username in the search bar above</div>
+    </div>
+
+    <!-- GENERAL -->
+    <div id="page-general" class="page" style="display:none">
+      <div class="page-body">
+        <div class="section-title mb14">Player Overview</div>
+        <div class="grid-4 mb26" id="generalCards"></div>
+        <div class="two-col">
+          <div>
+            <div class="section-title mb14">Skills</div>
+            <div id="skillBars"></div>
+          </div>
+          <div>
+            <div class="section-title mb14">Slayers</div>
+            <div id="slayerCards"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMBAT -->
+    <div id="page-combat" class="page" style="display:none">
+      <div class="inner-tabs">
+        <div class="inner-tab active" onclick="showInner('combat','dungeons',this)">Dungeons</div>
+        <div class="inner-tab" onclick="showInner('combat','bestiary',this)">Bestiary</div>
+        <div class="inner-tab" onclick="showInner('combat','crimson',this)">Crimson Isle</div>
+        <div class="inner-tab" onclick="showInner('combat','kills',this)">Kills / Deaths</div>
+      </div>
+      <div class="page-body">
+        <div id="combat-dungeons" class="inner-page active">
+          <div class="two-col mb26">
+            <div><div class="section-title mb14">Dungeon Info</div><div class="grid-3" id="dungeonCards"></div></div>
+            <div><div class="section-title mb14">Class Levels</div><div id="classSkillBars"></div></div>
+          </div>
+          <div class="section-title mb14">Floor Completions</div>
+          <table class="data-table"><thead><tr><th>Floor</th><th>Completions</th><th>Best Score</th><th>Fastest</th></tr></thead><tbody id="floorTable"></tbody></table>
+        </div>
+        <div id="combat-bestiary" class="inner-page">
+          <div class="bestiary-islands" id="bestiaryIslandBtns"></div>
+          <div id="bestiaryTables"></div>
+        </div>
+        <div id="combat-crimson" class="inner-page">
+          <div class="two-col mb26">
+            <div>
+              <div class="section-title mb14">Faction Reputation</div>
+              <div class="faction-wrap mb14" id="factionBars"></div>
+              <div class="section-title mb14">Dojo Stats</div>
+              <table class="data-table"><thead><tr><th>Challenge</th><th>Score</th><th>Rank</th></tr></thead><tbody id="dojoTable"></tbody></table>
+            </div>
+            <div>
+              <div class="section-title mb14">Kuudra Stats</div>
+              <div class="grid-2 mb14" id="kuudraCards"></div>
+              <table class="data-table"><thead><tr><th>Tier</th><th>Completions</th></tr></thead><tbody id="kuudraTable"></tbody></table>
+            </div>
+          </div>
+        </div>
+        <div id="combat-kills" class="inner-page">
+          <div class="section-title mb14">Mob Kill / Death Records</div>
+          <table class="data-table"><thead><tr><th>Mob</th><th>Kills</th><th>Deaths</th><th>K/D</th></tr></thead><tbody id="killsTable"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVENTORY -->
+    <div id="page-inventory" class="page" style="display:none">
+      <div class="page-body">
+        <div class="two-col mb26">
+          <div>
+            <div class="section-title mb14">Armor</div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div class="armor-col" id="armorSlots"></div>
+              <div style="flex:1" id="armorInfo"></div>
+            </div>
+          </div>
+          <div>
+            <div class="section-title mb14">Equipment</div>
+            <div style="display:flex;gap:8px;margin-bottom:6px" id="equipmentSlots"></div>
+          </div>
+        </div>
+        <div class="section-title mb14">Inventory (36 slots)</div>
+        <div class="inv-grid" id="invGrid"></div>
+      </div>
+    </div>
+
+    <!-- COLLECTIONS -->
+    <div id="page-collections" class="page" style="display:none">
+      <div class="inner-tabs">
+        <div class="inner-tab active" onclick="showInner('collections','col-farming',this)">Farming</div>
+        <div class="inner-tab" onclick="showInner('collections','col-mining',this)">Mining</div>
+        <div class="inner-tab" onclick="showInner('collections','col-combat',this)">Combat</div>
+        <div class="inner-tab" onclick="showInner('collections','col-foraging',this)">Foraging</div>
+        <div class="inner-tab" onclick="showInner('collections','col-fishing',this)">Fishing</div>
+      </div>
+      <div class="page-body">
+        <div id="collections-col-farming" class="inner-page active"><div class="coll-grid" id="coll-FARMING"></div></div>
+        <div id="collections-col-mining"  class="inner-page"><div class="coll-grid" id="coll-MINING"></div></div>
+        <div id="collections-col-combat"  class="inner-page"><div class="coll-grid" id="coll-COMBAT"></div></div>
+        <div id="collections-col-foraging" class="inner-page"><div class="coll-grid" id="coll-FORAGING"></div></div>
+        <div id="collections-col-fishing" class="inner-page"><div class="coll-grid" id="coll-FISHING"></div></div>
+      </div>
+    </div>
+
+    <!-- MINING -->
+    <div id="page-mine" class="page" style="display:none">
+      <div class="inner-tabs">
+        <div class="inner-tab active" onclick="showInner('mine','mine-main',this)">Main</div>
+        <div class="inner-tab" onclick="showInner('mine','mine-hotm',this)">HotM Tree</div>
+      </div>
+      <div class="page-body">
+        <div id="mine-mine-main" class="inner-page active">
+          <div class="two-col mb20">
+            <div><div class="section-title mb14">General</div><div class="grid-3 mb14" id="miningCards"></div></div>
+            <div><div class="section-title mb14">Powder</div><div id="powderBars"></div></div>
+          </div>
+          <div class="section-title mb14">Crystal Status</div>
+          <div class="crystal-grid" id="crystalGrid"></div>
+        </div>
+        <div id="mine-mine-hotm" class="inner-page">
+          <div class="section-title mb14">Heart of the Mountain Tree</div>
+          <div class="hotm-grid" id="hotmGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FISHING -->
+    <div id="page-fishing" class="page" style="display:none">
+      <div class="inner-tabs">
+        <div class="inner-tab active" onclick="showInner('fishing','fish-regular',this)">Regular</div>
+        <div class="inner-tab" onclick="showInner('fishing','fish-trophy',this)">Trophy Fish</div>
+      </div>
+      <div class="page-body">
+        <div id="fishing-fish-regular" class="inner-page active">
+          <div class="grid-4 mb20" id="fishingCards"></div>
+          <div class="section-title mb14">Sea Creature Kills</div>
+          <table class="data-table"><thead><tr><th>Creature</th><th>Kills</th></tr></thead><tbody id="seaCreatureTable"></tbody></table>
+        </div>
+        <div id="fishing-fish-trophy" class="inner-page">
+          <div class="grid-4 mb20" id="trophyCards"></div>
+          <div class="section-title mb14">Trophy Fish</div>
+          <div class="trophy-grid" id="trophyGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FARMING -->
+    <div id="page-farming" class="page" style="display:none">
+      <div class="inner-tabs">
+        <div class="inner-tab active" onclick="showInner('farming','farm-main',this)">Main</div>
+        <div class="inner-tab" onclick="showInner('farming','farm-jacob',this)">Jacob's Contests</div>
+        <div class="inner-tab" onclick="showInner('farming','farm-visitors',this)">Visitors</div>
+      </div>
+      <div class="page-body">
+        <div id="farming-farm-main" class="inner-page active"><div class="grid-4 mb20" id="farmingCards"></div></div>
+        <div id="farming-farm-jacob" class="inner-page">
+          <div class="grid-4 mb20" id="jacobCards"></div>
+          <div class="section-title mb14">Best Scores</div>
+          <table class="data-table"><thead><tr><th>Crop</th><th>Best Score</th><th>Medal</th></tr></thead><tbody id="jacobTable"></tbody></table>
+        </div>
+        <div id="farming-farm-visitors" class="inner-page"><div class="grid-4 mb20" id="visitorCards"></div></div>
+      </div>
+    </div>
+
+    <!-- PETS -->
+    <div id="page-pets" class="page" style="display:none">
+      <div class="page-body">
+        <div class="grid-4 mb20" id="petCards"></div>
+        <div class="section-title mb14">Pet Collection</div>
+        <div style="display:flex;flex-direction:column;gap:8px" id="petList"></div>
+      </div>
+    </div>
+
+    <!-- MUSEUM -->
+    <div id="page-museum" class="page" style="display:none">
+      <div class="page-body">
+        <div class="grid-4 mb20" id="museumCards"></div>
+        <div class="two-col">
+          <div><div class="section-title mb14">Weapons</div><div class="museum-grid" id="museumWeapons"></div></div>
+          <div><div class="section-title mb14">Armor Sets</div><div class="museum-grid" id="museumArmor"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHOCOLATE FACTORY -->
+    <div id="page-chocolate" class="page" style="display:none">
+      <div class="page-body">
+        <div class="choc-header" id="chocHeader"></div>
+        <div class="two-col mb20">
+          <div>
+            <div class="section-title mb14">Rabbit Employees</div>
+            <table class="data-table"><thead><tr><th>Rabbit</th><th>Level</th><th>Rarity</th></tr></thead><tbody id="rabbitTable"></tbody></table>
+          </div>
+          <div>
+            <div class="section-title mb14">Rabbit Rarity Breakdown</div>
+            <div class="grid-4" id="rabbitRarityCards"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIFT -->
+    <div id="page-rift" class="page" style="display:none">
+      <div class="inner-tabs">
+        <div class="inner-tab active" onclick="showInner('rift','rift-main',this)">Overview</div>
+        <div class="inner-tab" onclick="showInner('rift','rift-enigma',this)">Enigma Souls</div>
+      </div>
+      <div class="page-body">
+        <div id="rift-rift-main" class="inner-page active"><div class="grid-4 mb20" id="riftCards"></div></div>
+        <div id="rift-rift-enigma" class="inner-page">
+          <div class="section-title mb14" id="enigmaTitle">Enigma Souls</div>
+          <div style="margin-bottom:14px">
+            <div style="height:10px;background:rgba(255,255,255,0.05);border-radius:5px;overflow:hidden;border:1px solid var(--border)">
+              <div id="enigmaBar" style="height:100%;background:linear-gradient(90deg,#7c3aed,#a855f7,#ec4899);border-radius:5px;transition:width 0.6s ease"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end .main -->
+</div><!-- end .app -->
+
+<script>
+// ═══════════════════════════════════════════════════
+//  CONSTANTS & STATE
+// ═══════════════════════════════════════════════════
+const HYPIXEL_BASE = 'https://api.hypixel.net/v2';
+const MOJANG_BASE  = 'https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byName';
+
+let API_KEY = '';
+let currentData = null;   // raw API profile member data
+let currentProfile = null; // full profile object
+let allProfiles = [];
+let currentUUID = '';
+let skillXpTable = [];    // loaded from /resources/skyblock/skills
+let collectionData = {};  // loaded from /resources/skyblock/collections
+
+// ─── Skill XP table (levels 1–60, standard skills) ───
+// We embed a hardcoded table as a fallback since the API call is optional
+const SKILL_XP = [
+  50,125,200,300,500,750,1000,1500,2000,3500,
+  5000,7500,10000,15000,20000,30000,50000,75000,100000,200000,
+  300000,400000,500000,600000,700000,800000,900000,1000000,1100000,1200000,
+  1300000,1400000,1500000,1600000,1700000,1800000,1900000,2000000,2100000,2200000,
+  2300000,2400000,2500000,2600000,2750000,2900000,3100000,3400000,3700000,4000000,
+  4300000,4600000,4900000,5200000,5500000,5800000,6100000,6400000,6700000,7000000
+];
+
+const CATA_XP = [
+  50,75,110,160,230,330,480,680,1000,1430,
+  2050,2925,4135,5900,8425,12045,17200,24500,35000,50000,
+  70000,100000,143000,204000,291000,415000,592000,845000,1205000,1720000,
+  2450000,3495000,4995000,7143000,10200000,14580000,20825000,29750000,42500000,60000000,
+  85000000,120000000,170000000,240000000,340000000,485000000,685000000,685000000,685000000,685000000
+];
+
+// ─── Slayer XP thresholds ───
+const SLAYER_LEVELS = {
+  zombie:   [5,15,200,1000,5000,20000,100000,400000,1000000],
+  spider:   [5,15,200,1000,5000,20000,100000,400000,1000000],
+  wolf:     [10,30,250,1500,5000,20000,100000,400000,1000000],
+  enderman: [10,30,250,1500,5000,20000,100000,400000,1000000],
+  blaze:    [10,30,250,1500,5000,20000,100000,400000,1000000],
+  vampire:  [20,75,240,840,2400],
+};
+
+// ─── HotM perk definitions ───
+const HOTM_PERKS = {
+  mining_speed:    { name:'Mining Speed',       icon:'⚡', maxLevel:50 },
+  mining_fortune:  { name:'Mining Fortune',     icon:'🍀', maxLevel:50 },
+  efficient_miner: { name:'Efficient Miner',    icon:'🌟', maxLevel:100 },
+  experience_orbs: { name:'Experience Orbs',    icon:'🔮', maxLevel:25 },
+  front_loaded:    { name:'Front Loaded',       icon:'💎', maxLevel:1 },
+  titanium_insanium:{ name:'Titanium Insanium', icon:'🏔️', maxLevel:50 },
+  daily_powder:    { name:'Daily Powder',       icon:'⛏️', maxLevel:100 },
+  luck_of_the_cave:{ name:'Luck of the Cave',   icon:'🍀', maxLevel:45 },
+  crystallized:    { name:'Crystallized',        icon:'💎', maxLevel:30 },
+  anomalous_desire:{ name:'Anomalous Desire',   icon:'⚙️', maxLevel:45 },
+  mining_speed_2:  { name:'Mining Speed II',    icon:'⚡', maxLevel:50 },
+  sky_mall:        { name:'Sky Mall',           icon:'💡', maxLevel:1 },
+  precision_mining:{ name:'Precision Mining',   icon:'🎯', maxLevel:1 },
+  star_powder:     { name:'Star Powder',        icon:'⭐', maxLevel:1 },
+  mole:            { name:'Mole',               icon:'🔥', maxLevel:200 },
+  professional:    { name:'Professional',       icon:'🪙', maxLevel:20 },
+  lonesome_miner:  { name:'Lonesome Miner',     icon:'🏆', maxLevel:45 },
+  great_explorer:  { name:'Great Explorer',     icon:'🗺️', maxLevel:20 },
+  fortunate:       { name:'Fortunate',          icon:'✨', maxLevel:20 },
+  powder_buff:     { name:'Powder Buff',        icon:'🌪️', maxLevel:50 },
+  vein_seeker:     { name:'Vein Seeker',        icon:'🔮', maxLevel:1 },
+  no_stone_unturned: { name:'No Stone Unturned',icon:'🛡️', maxLevel:50 },
+  mining_speed_boost: { name:'Speed Boost',     icon:'💨', maxLevel:1 },
+  pickaxe_toss:    { name:'Pickaxe Toss',       icon:'🪃', maxLevel:1 },
+  warm_hearted:    { name:'Warm Hearted',       icon:'🔑', maxLevel:50 },
+  miners_blessing: { name:"Miner's Blessing",   icon:'🙏', maxLevel:1 },
+  seasoned_mineman:{ name:'Seasoned Mineman',   icon:'💣', maxLevel:100 },
+  mining_madness:  { name:'Mining Madness',     icon:'😤', maxLevel:50 },
+  core_of_the_mountain: { name:'Core of the Mountain', icon:'🌋', maxLevel:10 },
+};
+
+// ─── Crystal colors ───
+const CRYSTAL_COLORS = {
+  jade: '#55ffff', amber: '#ffaa00', topaz: '#ffcc00',
+  amethyst: '#ff55ff', sapphire: '#5588ff', ruby: '#ff5555',
+  jasper: '#ff8855', opal: '#aaaaff', aquamarine: '#88ffee',
+  citrine: '#ffdd55', onyx: '#888888',
+};
+
+// ─── Trophy fish display names ───
+const TROPHY_NAMES = {
+  sulphur_skitter: 'Sulphur Skitter', obfuscated_1: 'Obfuscated Fish 1',
+  obfuscated_2: 'Obfuscated Fish 2', obfuscated_3: 'Obfuscated Fish 3',
+  steaming_hot_flounder: 'Steaming-Hot Flounder', lava_horse: 'Lava Horse',
+  mana_ray: 'Mana Ray', volcanic_stonefish: 'Volcanic Stonefish',
+  vanille: 'Vanille', plhlegblast: 'Plhlegblast', skeleton_fish: 'Skeleton Fish',
+  weirder_tuba: 'Weirder Tuba', moldfin: 'Moldfin', slugfish: 'Slugfish',
+  gusher: 'Gusher', blobfish: 'Blobfish', diamond_worm: 'Diamond Worm',
+  flying_fish: 'Flying Fish',
+};
+
+// ─── Rarity → CSS class ───
+const RARITY_CLASS = { COMMON:'common',UNCOMMON:'uncommon',RARE:'rare',EPIC:'epic',LEGENDARY:'legendary',MYTHIC:'mythic',DIVINE:'divine',SPECIAL:'special' };
+
+// ═══════════════════════════════════════════════════
+//  API KEY MODAL
+// ═══════════════════════════════════════════════════
+function saveApiKey() {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  const err = document.getElementById('modalError');
+  // Basic UUID format check
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)) {
+    err.textContent = 'Key must be in UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).';
+    err.classList.add('visible'); return;
+  }
+  API_KEY = val;
+  err.classList.remove('visible');
+  document.getElementById('apiModal').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════
+//  SEARCH FLOW
+// ═══════════════════════════════════════════════════
+async function triggerSearch() {
+  const input = document.getElementById('usernameInput');
+  const username = input.value.trim();
+  if (!username) { input.style.animation='none'; input.offsetHeight; input.style.animation='shake 0.35s ease'; return; }
+
+  showLoader(`Fetching ${username}…`, 'Looking up UUID via Mojang');
+  try {
+    // Step 1: Mojang UUID lookup
+    const uuid = await getUUID(username);
+    setLoaderText('Loading SkyBlock profiles…', 'Connecting to Hypixel API');
+
+    // Step 2: Get all profiles
+    const profilesRes = await hypixelFetch(`/skyblock/profiles?uuid=${uuid}`);
+    if (!profilesRes.profiles || profilesRes.profiles.length === 0)
+      throw new Error('This player has no SkyBlock profiles.');
+
+    allProfiles = profilesRes.profiles;
+    currentUUID = uuid;
+
+    // Pick the active (selected) profile
+    const active = allProfiles.find(p => p.selected) || allProfiles[0];
+
+    setLoaderText('Building profile view…', `Loading ${active.cute_name}`);
+    await loadProfile(active, uuid, username);
+    hideLoader();
+
+  } catch (err) {
+    hideLoader();
+    showError(err.message || 'Something went wrong. Try again.');
+  }
+}
+
+const PROXIES = [
+  url => `https://api.cors.lol/?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://cors-proxy.htmldriven.com/?url=${encodeURIComponent(url)}`,
+];
+
+async function proxyFetch(url, options = {}) {
+  let lastErr;
+  for (const makeProxy of PROXIES) {
+    try {
+      const res = await fetch(makeProxy(url), options);
+      if (res.status === 403 || res.status === 503) continue; // proxy blocked it, try next
+      return res;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('All proxies failed.');
+}
+
+async function getUUID(username) {
+  const target = `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`;
+  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`);
+  if (!res.ok) throw new Error(`Player "${username}" not found.`);
+  const data = await res.json();
+  if (!data || !data.id) throw new Error(`Player "${username}" not found.`);
+  return data.id;
+}
+
+async function hypixelFetch(path) {
+  const target = `https://api.hypixel.net/v2${path}`;
+  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`, {
+    headers: { 'API-Key': API_KEY }
+  });
+  if (res.status === 403) throw new Error('Invalid API key. Click the key icon to re-enter it.');
+  if (res.status === 429) throw new Error('Rate limited by Hypixel. Please wait a moment.');
+  if (!res.ok) throw new Error(`Hypixel API error (${res.status}).`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.cause || 'Hypixel API returned an error.');
+  return data;
+}
+
+async function loadProfile(profile, uuid, username) {
+  currentProfile = profile;
+  currentData = profile.members[uuid];
+  if (!currentData) throw new Error('No data found for this player on this profile.');
+
+  // Also fetch museum data (separate endpoint, non-blocking fail)
+  let museumData = null;
+  try {
+    const mRes = await hypixelFetch(`/skyblock/museum?profile=${profile.profile_id}`);
+    museumData = mRes.members ? mRes.members[uuid] : null;
+  } catch(e) { /* museum data optional */ }
+
+  // Also fetch garden data
+  let gardenData = null;
+  try {
+    const gRes = await hypixelFetch(`/skyblock/garden?profile=${profile.profile_id}`);
+    gardenData = gRes;
+  } catch(e) { /* garden optional */ }
+
+  populateUI(username, uuid, museumData, gardenData);
+  populateProfileDropdown(allProfiles, profile.profile_id);
+  populateCoopDropdown(profile.members, uuid);
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.querySelectorAll('.page').forEach(p => { p.style.display='none'; p.classList.remove('active'); });
+  const gen = document.getElementById('page-general');
+  gen.style.display = 'flex'; gen.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-item')[0].classList.add('active');
+
+  document.getElementById('statusDot').style.background = '#55ff55';
+  document.getElementById('statusDot').style.boxShadow = '0 0 5px rgba(85,255,85,0.5)';
+  document.getElementById('lastUpdated').textContent = 'Updated just now';
+}
+
+// ═══════════════════════════════════════════════════
+//  POPULATE UI
+// ═══════════════════════════════════════════════════
+function populateUI(username, uuid, museumData, gardenData) {
+  const d = currentData;
+  const p = currentProfile;
+
+  // ── Sidebar ──
+  document.getElementById('playerSkin').style.backgroundImage = `url('https://mc-heads.net/body/${username}')`;
+  document.getElementById('playerName').textContent = username;
+  const sbLevel = Math.floor((d.leveling?.experience || 0) / 100);
+  document.getElementById('playerLevel').textContent = `✦ SkyBlock Level ${sbLevel}`;
+  // Rank from social (not available via profile API — show blank)
+  document.getElementById('playerRank').textContent = '';
+
+  populateGeneral(d, p, sbLevel);
+  populateCombat(d);
+  populateInventory(d);
+  populateCollections(d);
+  populateMining(d);
+  populateFishing(d);
+  populateFarming(d, gardenData);
+  populatePets(d);
+  populateMuseum(museumData);
+  populateChocolate(d);
+  populateRift(d);
+}
+
+// ─── GENERAL ───
+function populateGeneral(d, p, sbLevel) {
+  const purse = d.currencies?.coin_purse || 0;
+  const bank  = p.banking?.balance || 0;
+  const skills = computeAllSkills(d);
+  const skillAvg = skills.filter(s=>!['runecrafting','social','carpentry'].includes(s.id)).reduce((a,b)=>a+b.level,0) / 9;
+  const fairySouls = d.fairy_soul?.total_collected || 0;
+
+  document.getElementById('generalCards').innerHTML = `
+    ${card('Purse', fmt(purse) + ' coins', '', 'var(--legendary)')}
+    ${card('Bank', fmt(bank) + ' coins', '', 'var(--legendary)')}
+    ${card('SkyBlock Level', sbLevel, '')}
+    ${card('Fairy Souls', fairySouls, '')}
+    ${card('Skill Average', skillAvg.toFixed(1), '', 'var(--divine)')}
+    ${card('Profile', p.cute_name, p.game_mode ? p.game_mode : 'normal')}
+    ${card('Catacombs Level', computeLevel(d.dungeons?.dungeon_types?.catacombs?.experience || 0, CATA_XP), '', 'var(--mythic)')}
+    ${card('Profile ID', p.profile_id.slice(0,8)+'…', '')}
+  `;
+
+  // Skill bars — top 8
+  const sorted = [...skills].sort((a,b)=>b.level-a.level).slice(0,8);
+  const maxLevel = 60;
+  const skillColors = { farming:'var(--skill-farming)', mining:'var(--skill-mining)', combat:'var(--skill-combat)', foraging:'var(--skill-foraging)', fishing:'var(--skill-fishing)', enchanting:'var(--skill-enchanting)', alchemy:'var(--skill-alchemy)', taming:'#aaffaa', carpentry:'#ffaa55', runecrafting:'#ff55ff' };
+  document.getElementById('skillBars').innerHTML = sorted.map(s => `
+    <div class="skill-row">
+      <div class="skill-label">${cap(s.id)}</div>
+      <div class="skill-track"><div class="skill-fill" style="width:${(s.level/maxLevel)*100}%;background:${skillColors[s.id]||'var(--accent)'}"></div></div>
+      <div class="skill-lv">${s.level}</div>
+    </div>`).join('');
+
+  // Slayer cards
+  const slayers = [
+    { key:'zombie',   name:'Revenant Horror',    color:'#ff5555' },
+    { key:'spider',   name:'Tarantula Broodfather', color:'#aa55ff' },
+    { key:'wolf',     name:'Sven Packmaster',     color:'#5588ff' },
+    { key:'enderman', name:'Voidgloom Seraph',    color:'#55ffff' },
+    { key:'blaze',    name:'Inferno Demonlord',   color:'#ff8800' },
+    { key:'vampire',  name:'Riftstalker Bloodfiend', color:'#ff55ff' },
+  ];
+  document.getElementById('slayerCards').innerHTML = slayers.map(s => {
+    const boss = d.slayer_bosses?.[s.key];
+    const xp = boss?.xp || 0;
+    const thresholds = SLAYER_LEVELS[s.key] || SLAYER_LEVELS.zombie;
+    let lv = 0; for (let i=0;i<thresholds.length;i++) { if(xp>=thresholds[i]) lv=i+1; }
+    const nextXp = thresholds[lv] || thresholds[thresholds.length-1];
+    const pct = lv >= thresholds.length ? 100 : Math.min(100,(xp/nextXp)*100);
+    return `<div class="slayer-card mb8">
+      <div class="slayer-header"><div class="slayer-name" style="color:${s.color}">${s.name}</div><div class="slayer-lv" style="color:${s.color}">${lv}</div></div>
+      <div class="slayer-bar-track"><div class="slayer-bar-fill" style="width:${pct}%;background:${s.color}"></div></div>
+      <div class="slayer-xp">${fmt(xp)} XP</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── COMBAT ───
+function populateCombat(d) {
+  // Dungeons
+  const dung = d.dungeons || {};
+  const cata = dung.dungeon_types?.catacombs || {};
+  const cataXp = cata.experience || 0;
+  const cataLevel = computeLevel(cataXp, CATA_XP);
+  const secrets = dung.secrets || d.player_stats?.dungeons?.total_secrets_found || 0;
+  const classes = dung.player_classes || {};
+  const classAvg = Object.values(classes).length ? (Object.values(classes).reduce((a,b)=>a+(computeLevel(b.experience||0,CATA_XP)),0)/Object.values(classes).length).toFixed(1) : '—';
+
+  document.getElementById('dungeonCards').innerHTML = `
+    ${card('Catacombs', cataLevel, fmt(cataXp)+' XP', 'var(--mythic)')}
+    ${card('Secrets Found', fmt(secrets), '')}
+    ${card('Class Average', classAvg, '', 'var(--divine)')}
+  `;
+
+  const classDefs = [
+    { key:'healer',   name:'Healer',   color:'#ff55ff' },
+    { key:'mage',     name:'Mage',     color:'#5555ff' },
+    { key:'berserk',  name:'Berserk',  color:'#ff5555' },
+    { key:'archer',   name:'Archer',   color:'#55ff55' },
+    { key:'tank',     name:'Tank',     color:'#aaaaaa' },
+  ];
+  document.getElementById('classSkillBars').innerHTML = classDefs.map(c => {
+    const xp = classes[c.key]?.experience || 0;
+    const lv = computeLevel(xp, CATA_XP);
+    return `<div class="skill-row">
+      <div class="skill-label">${c.name}</div>
+      <div class="skill-track"><div class="skill-fill" style="width:${(lv/50)*100}%;background:${c.color}"></div></div>
+      <div class="skill-lv" style="color:${c.color}">${lv}</div>
+    </div>`;
+  }).join('');
+
+  // Floor completions
+  const masterFloors = cata.master_completions_summary || {};
+  const normalFloors = cata.tier_completions || {};
+  let floorHtml = '';
+  for (let i=7;i>=1;i--) {
+    const comp = masterFloors[`master_catacombs_${i}`] || 0;
+    if (comp > 0) {
+      const best = (cata.fastest_time_s_plus || {})[`master_catacombs_${i}`];
+      const bestStr = best ? fmtTime(best) : '—';
+      floorHtml += `<tr><td class="mythic">MM ${i}</td><td>${fmt(comp)}</td><td>—</td><td>${bestStr}</td></tr>`;
+    }
+  }
+  for (let i=7;i>=0;i--) {
+    const key = i === 0 ? 'catacombs_entrance' : `catacombs_${i}`;
+    const comp = normalFloors[key] || 0;
+    if (comp > 0) {
+      const best = (cata.fastest_time_s_plus || {})[key];
+      const bestStr = best ? fmtTime(best) : '—';
+      floorHtml += `<tr><td>Floor ${i}</td><td>${fmt(comp)}</td><td>—</td><td>${bestStr}</td></tr>`;
+    }
+  }
+  document.getElementById('floorTable').innerHTML = floorHtml || '<tr><td colspan="4" style="color:var(--text-dim)">No dungeon completions found.</td></tr>';
+
+  // Bestiary
+  populateBestiary(d);
+
+  // Crimson Isle
+  populateCrimson(d);
+
+  // Kills
+  const stats = d.player_stats || {};
+  const kills = stats.kills || {};
+  const deaths = stats.deaths || {};
+  const mobEntries = Object.entries(kills)
+    .filter(([k]) => k !== 'total')
+    .sort((a,b) => b[1]-a[1])
+    .slice(0,20);
+  document.getElementById('killsTable').innerHTML = mobEntries.map(([mob, k]) => {
+    const d2 = deaths[mob] || 0;
+    const kd = d2 === 0 ? '∞' : (k/d2).toFixed(1);
+    const color = d2 === 0 ? '#55ff55' : 'var(--legendary)';
+    return `<tr><td>${fmtMobName(mob)}</td><td>${fmt(k)}</td><td>${d2}</td><td style="color:${color}">${kd}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" style="color:var(--text-dim)">No kill data available.</td></tr>';
+}
+
+function populateBestiary(d) {
+  const bestiary = d.bestiary || {};
+  const kills = bestiary.kills || {};
+  const deaths = bestiary.deaths || {};
+
+  // Group by island prefix
+  const islands = {
+    hub: { name:'Hub', prefix:['zombie','skeleton','spider','creeper','zombie_villager','old_wolf'] },
+    end: { name:'The End', prefix:['enderman','voidling','zealot','watcher'] },
+    crimson: { name:'Crimson Isle', prefix:['magma_slug','barbarian','vanquisher','atoned','kuudra','mage_'] },
+    dungeon: { name:'Dungeons', prefix:['skeleton_grunt','wither_miner','watcher','diamond_guy','crypt'] },
+    farming: { name:'Farming', prefix:['mushroom_cow','munchkin','clumsycat','sprinklr'] },
+    mining: { name:'Mining', prefix:['lapis_zombie','emerald_slime','diamond_zombie','lapis_'] },
+  };
+
+  const btns = document.getElementById('bestiaryIslandBtns');
+  const tables = document.getElementById('bestiaryTables');
+  btns.innerHTML = '';
+  tables.innerHTML = '';
+
+  Object.entries(islands).forEach(([id, island], idx) => {
+    const btn = document.createElement('div');
+    btn.className = 'island-btn' + (idx===0?' active':'');
+    btn.textContent = island.name;
+    btn.onclick = () => {
+      document.querySelectorAll('.island-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.bestiary-list').forEach(l=>l.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(`bestiary-${id}`).classList.add('active');
+    };
+    btns.appendChild(btn);
+
+    const mobs = Object.entries(kills)
+      .filter(([k]) => island.prefix.some(p => k.toLowerCase().startsWith(p)))
+      .sort((a,b)=>b[1]-a[1]);
+
+    const table = document.createElement('div');
+    table.className = 'bestiary-list' + (idx===0?' active':'');
+    table.id = `bestiary-${id}`;
+    if (mobs.length === 0) {
+      table.innerHTML = `<p style="color:var(--text-dim);font-size:12px">No data for this area.</p>`;
+    } else {
+      table.innerHTML = `<table class="data-table">
+        <thead><tr><th>Mob</th><th>Kills</th><th>Deaths</th></tr></thead>
+        <tbody>${mobs.map(([mob, k]) => `
+          <tr><td>${fmtMobName(mob)}</td><td>${fmt(k)}</td><td>${deaths[mob]||0}</td></tr>
+        `).join('')}</tbody></table>`;
+    }
+    tables.appendChild(table);
+  });
+}
+
+function populateCrimson(d) {
+  const nether = d.nether_island_player_data || {};
+
+  // Faction reputation
+  const factions = {
+    'Mages': { key:'mages_rep', color:'linear-gradient(90deg,#aa00aa,#ff55ff)', textColor:'#ff55ff' },
+    'Barbarians': { key:'barbarians_rep', color:'linear-gradient(90deg,#2244aa,#5588ff)', textColor:'#5588ff' },
+  };
+  const repNames = ['Hostile','Unfriendly','Neutral','Friendly','Trusted','Honored','Renowned','Exalted'];
+  document.getElementById('factionBars').innerHTML = Object.entries(factions).map(([name, f]) => {
+    const rep = nether[f.key] || 0;
+    const repName = repNames[Math.min(7, Math.floor(rep/2000))] || 'Hostile';
+    const pct = Math.min(100,(rep%2000)/2000*100);
+    return `<div class="faction-row">
+      <div class="faction-name" style="color:${f.textColor}">${name}</div>
+      <div class="faction-track"><div class="faction-fill" style="width:${pct}%;background:${f.color}"></div></div>
+      <div class="faction-rep" style="color:${f.textColor}">${repName}</div>
+    </div>`;
+  }).join('');
+
+  // Dojo
+  const dojo = nether.dojo || {};
+  const dojoChallenges = [
+    { key:'dojo_stamina_time',   name:'Stamina' },
+    { key:'dojo_mobility_time',  name:'Swiftness' },
+    { key:'dojo_endurance_time', name:'Force of Will' },
+    { key:'dojo_mastery_time',   name:'Mastery of Arrows' },
+    { key:'dojo_discipline_time',name:'Sneaky Maneuvering' },
+    { key:'dojo_force_time',     name:'Power Surge' },
+  ];
+  document.getElementById('dojoTable').innerHTML = dojoChallenges.map(dc => {
+    const score = dojo[dc.key] || 0;
+    const rank = score >= 1000 ? '<span class="s-rank">S</span>' : score >= 800 ? '<span class="a-rank">A</span>' : score >= 600 ? '<span class="b-rank">B</span>' : '<span style="color:var(--text-dim)">—</span>';
+    return `<tr><td>${dc.name}</td><td style="font-weight:800">${score||'—'}</td><td>${rank}</td></tr>`;
+  }).join('');
+
+  // Kuudra
+  const kuudra = nether.kuudra_completed_tiers || {};
+  const kuudraTiers = [
+    { key:'none', name:'Basic', rarity:'common' },
+    { key:'hot',  name:'Hot',   rarity:'rare' },
+    { key:'burning', name:'Burning', rarity:'epic' },
+    { key:'fiery',   name:'Fiery',   rarity:'legendary' },
+    { key:'infernal',name:'Infernal',rarity:'mythic' },
+  ];
+  const totalKuudra = Object.values(kuudra).reduce((a,b)=>a+b,0);
+  const highestKuudra = kuudraTiers.filter(t=>kuudra[t.key]>0).pop();
+  document.getElementById('kuudraCards').innerHTML = `
+    ${card('Highest Tier', highestKuudra ? cap(highestKuudra.name) : '—', '', highestKuudra ? `var(--${highestKuudra.rarity})` : '')}
+    ${card('Total Runs', fmt(totalKuudra), '')}
+  `;
+  document.getElementById('kuudraTable').innerHTML = kuudraTiers.reverse().map(t => `
+    <tr><td class="${t.rarity}">${t.name}</td><td>${fmt(kuudra[t.key]||0)}</td></tr>
+  `).join('');
+}
+
+// ─── INVENTORY ───
+async function populateInventory(d) {
+  // We'll decode NBT for armor + main inventory
+  const armorSlots = document.getElementById('armorSlots');
+  const armorInfo  = document.getElementById('armorInfo');
+  const equipSlots = document.getElementById('equipmentSlots');
+  const invGrid    = document.getElementById('invGrid');
+
+  // Try to decode inventories
+  const armorItems    = await decodeNBT(d.inventory?.inv_armor?.data);
+  const equipItems    = await decodeNBT(d.inventory?.equipment_contents?.data);
+  const invItems      = await decodeNBT(d.inventory?.inv_contents?.data);
+
+  // Armor display
+  const armorPieces = armorItems ? armorItems.slice().reverse() : [];
+  const armorSlotIcons = ['🪖','🥻','🩱','👟'];
+  armorSlots.innerHTML = armorPieces.map((item, i) => {
+    if (!item || !item.id) return `<div class="inv-slot empty"><div class="item-icon">${armorSlotIcons[i]}</div></div>`;
+    const rar = item.rarity ? `rarity-${item.rarity.toLowerCase()}` : '';
+    return `<div class="inv-slot ${rar}">
+      ${item.texture ? `<img src="${item.texture}" alt="${item.displayName}">` : `<div style="font-size:10px;text-align:center;padding:2px">${item.id.slice(0,8)}</div>`}
+      <div class="item-name-tooltip" style="color:${rarColor(item.rarity)}">${item.displayName||item.id}</div>
+    </div>`;
+  }).join('');
+
+  // Armor info text
+  const armorNames = ['Helmet','Chestplate','Leggings','Boots'];
+  armorInfo.innerHTML = armorPieces.map((item, i) => {
+    const name = item?.displayName || item?.id || '—';
+    const rar = item?.rarity || '';
+    return `<div class="info-row" style="padding:5px 0">
+      <span class="info-key">${armorNames[i]}</span>
+      <span class="info-val ${rar ? RARITY_CLASS[rar]||'' : ''}">${name}</span>
+    </div>`;
+  }).join('');
+
+  // Equipment slots (necklace, cloak, belt, gloves)
+  const equipPieces = equipItems || [];
+  const equipLabels = ['Necklace','Cloak','Belt','Gloves'];
+  equipSlots.innerHTML = (equipPieces.length ? equipPieces : Array(4).fill(null)).map((item, i) => {
+    if (!item || !item.id) return `<div class="inv-slot empty" title="${equipLabels[i]}"></div>`;
+    const rar = item.rarity ? `rarity-${item.rarity.toLowerCase()}` : '';
+    return `<div class="inv-slot ${rar}" title="${item.displayName||item.id}">
+      ${item.texture ? `<img src="${item.texture}" alt="">` : `<div style="font-size:9px;text-align:center;padding:2px">${item.id?.slice(0,6)||'?'}</div>`}
+      <div class="item-name-tooltip" style="color:${rarColor(item.rarity)}">${item.displayName||item.id}</div>
+    </div>`;
+  }).join('');
+
+  // Main inventory (36 slots)
+  const slots = invItems || Array(36).fill(null);
+  invGrid.innerHTML = slots.map(item => {
+    if (!item || !item.id) return `<div class="inv-slot empty"></div>`;
+    const rar = item.rarity ? `rarity-${item.rarity.toLowerCase()}` : '';
+    const count = (item.count && item.count > 1) ? `<div class="item-count">${item.count}</div>` : '';
+    return `<div class="inv-slot ${rar}">
+      ${item.texture ? `<img src="${item.texture}" alt="">` : `<div style="font-size:9px;text-align:center;padding:2px">${(item.displayName||item.id).slice(0,6)}</div>`}
+      ${count}
+      <div class="item-name-tooltip" style="color:${rarColor(item.rarity)}">${item.displayName||item.id}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── COLLECTIONS ───
+function populateCollections(d) {
+  const collections = d.collection || {};
+  const cats = {
+    FARMING: ['WHEAT','CARROT_ITEM','POTATO_ITEM','SUGAR_CANE','PUMPKIN','MELON','SEEDS','RED_MUSHROOM','BROWN_MUSHROOM','CACTUS','NETHER_STALK','COCOA','MUTTON','RABBIT','CHICKEN','PORK','FEATHER','LEATHER','RAW_BEEF','INK_SACK:4'],
+    MINING: ['COBBLESTONE','COAL','IRON_INGOT','GOLD_INGOT','DIAMOND','LAPIS_LAZULI','REDSTONE','EMERALD','OBSIDIAN','GLOWSTONE_DUST','GRAVEL','ICE','NETHERRACK','SAND','ENDER_STONE','MITHRIL_ORE','HARD_STONE','GEMSTONE_COLLECTION','TITANIUM_ORE','SPONGE','GLACITE'],
+    COMBAT: ['ROTTEN_FLESH','BONE','STRING','SPIDER_EYE','SULPHUR','ENDER_PEARL','GHAST_TEAR','SLIMEBALL','BLAZE_ROD','MAGMA_CREAM','PORK','FEATHER','LEATHER','RAW_BEEF'],
+    FORAGING: ['LOG','LOG:1','LOG:2','LOG:3','LOG_2','LOG_2:1','HUGE_MUSHROOM_1','HUGE_MUSHROOM_2'],
+    FISHING: ['RAW_FISH','RAW_FISH:1','RAW_FISH:2','RAW_FISH:3','PRISMARINE_SHARD','PRISMARINE_CRYSTALS','CLAY_BALL','WATER_LILY','INK_SACK','SPONGE','MAGMA_FISH','SHARK_FIN'],
+  };
+
+  const tierColors = ['var(--common)','var(--uncommon)','var(--rare)','var(--epic)','var(--legendary)','var(--mythic)'];
+  const tierNames  = ['Common','Uncommon','Rare','Epic','Legendary','Mythic'];
+
+  Object.entries(cats).forEach(([cat, items]) => {
+    const el = document.getElementById(`coll-${cat}`);
+    if (!el) return;
+    el.innerHTML = items.map(itemId => {
+      const amount = collections[itemId] || 0;
+      if (amount === 0) return '';
+      // Compute tier (rough: log scale)
+      const tierThresholds = [50,100,250,1000,5000,25000,100000,500000,5000000,25000000,100000000,500000000];
+      let tier = 0; for (let t of tierThresholds) { if(amount>=t) tier++; }
+      const tierColor = tierColors[Math.min(5, Math.floor(tier/2))];
+      const tierName = tierNames[Math.min(5, Math.floor(tier/2))];
+      const maxTierAmount = tierThresholds[Math.min(tierThresholds.length-1, tier)];
+      const pct = Math.min(100,(amount/maxTierAmount)*100);
+      return `<div class="coll-item">
+        <div class="coll-name">${fmtItemName(itemId)}</div>
+        <div class="coll-tier" style="color:${tierColor}">Tier ${toRoman(tier)}</div>
+        <div class="coll-bar-track"><div class="coll-bar-fill" style="width:${pct}%;background:${tierColor}"></div></div>
+        <div class="coll-amount">${fmt(amount)}</div>
+      </div>`;
+    }).filter(Boolean).join('') || '<p style="color:var(--text-dim);font-size:12px">No collection data.</p>';
+  });
+}
+
+// ─── MINING ───
+function populateMining(d) {
+  const mc = d.mining_core || {};
+  const hotmLevel = mc.tier || 0;
+  const mithrilPowder = (mc.powder_mithril || 0) + (mc.powder_mithril_total || 0);
+  const gemPowder = (mc.powder_gemstone || 0) + (mc.powder_gemstone_total || 0);
+  const glacitePowder = (mc.powder_glacite || 0) + (mc.powder_glacite_total || 0);
+
+  document.getElementById('miningCards').innerHTML = `
+    ${card('HotM Level', hotmLevel, '', 'var(--legendary)')}
+    ${card('Mithril Powder', fmt(mc.powder_mithril||0), 'total: '+fmt(mithrilPowder), 'var(--divine)')}
+    ${card('Gemstone Powder', fmt(mc.powder_gemstone||0), 'total: '+fmt(gemPowder), 'var(--mythic)')}
+  `;
+
+  document.getElementById('powderBars').innerHTML = [
+    { name:'Mithril',   color:'#55ffff', val: mc.powder_mithril||0,   max:500000 },
+    { name:'Gemstone',  color:'#ff55ff', val: mc.powder_gemstone||0,  max:500000 },
+    { name:'Glacite',   color:'#aaffaa', val: mc.powder_glacite||0,   max:500000 },
+  ].map(p => `<div class="skill-row">
+    <div class="skill-label" style="color:${p.color}">${p.name}</div>
+    <div class="skill-track"><div class="skill-fill" style="width:${Math.min(100,(p.val/p.max)*100)}%;background:${p.color}"></div></div>
+    <div class="skill-lv">${fmtK(p.val)}</div>
+  </div>`).join('');
+
+  // Crystals
+  const crystals = mc.crystals || {};
+  const crystalDefs = ['jade','amber','topaz','amethyst','sapphire','ruby','jasper','opal','aquamarine','citrine','onyx'];
+  document.getElementById('crystalGrid').innerHTML = crystalDefs.map(c => {
+    const state = crystals[`${c}_crystal`]?.state || 'NOT_FOUND';
+    const color = state === 'PLACED' ? '#55ff55' : state === 'FOUND' ? 'var(--legendary)' : 'var(--text-dim)';
+    const label = state === 'PLACED' ? 'Placed ✓' : state === 'FOUND' ? 'Found' : 'Not Found';
+    return `<div class="crystal-item">
+      <div class="crystal-dot" style="background:${CRYSTAL_COLORS[c]||'#aaaaaa'};${state==='NOT_FOUND'?'opacity:0.3':''}"></div>
+      <div class="crystal-name">${cap(c)}</div>
+      <div class="crystal-status" style="color:${color}">${label}</div>
+    </div>`;
+  }).join('');
+
+  // HotM tree
+  const nodes = mc.nodes || {};
+  const hotmLayout = [
+    [null,null,null,'mining_speed_boost',null,null,null],
+    [null,null,'vein_seeker','pickaxe_toss','miners_blessing',null,null],
+    [null,'mining_madness','sky_mall','efficient_miner','titanium_insanium','seasoned_mineman',null],
+    ['mining_fortune','front_loaded','daily_powder','mole','powder_buff','core_of_the_mountain','great_explorer'],
+    [null,'fortunate','anomalous_desire','precision_mining','mining_speed_2','luck_of_the_cave',null],
+    [null,null,'no_stone_unturned','star_powder','warm_hearted',null,null],
+  ];
+  document.getElementById('hotmGrid').innerHTML = hotmLayout.map(row =>
+    row.map(nodeKey => {
+      if (!nodeKey) return `<div class="hotm-empty"></div>`;
+      const perk = HOTM_PERKS[nodeKey];
+      if (!perk) return `<div class="hotm-empty"></div>`;
+      const level = nodes[nodeKey] || 0;
+      const state = level === 0 ? 'locked' : level >= perk.maxLevel ? 'maxed' : 'unlocked';
+      return `<div class="hotm-node ${state}">
+        <div class="node-icon">${perk.icon}</div>
+        ${perk.name}
+        <div class="node-lv">${level > 0 ? `Lv ${level}/${perk.maxLevel}` : 'Locked'}</div>
+      </div>`;
+    }).join('')
+  ).join('');
+}
+
+// ─── FISHING ───
+function populateFishing(d) {
+  const fishSkill = computeLevel(d.player_data?.experience?.SKILL_FISHING||0, SKILL_XP);
+  const stats = d.player_stats || {};
+  const fishStats = stats.fishing || {};
+  const seaCreatureKills = stats.kills || {};
+
+  document.getElementById('fishingCards').innerHTML = `
+    ${card('Fishing Level', fishSkill, '', 'var(--skill-fishing)')}
+    ${card('Total Catches', fmt(fishStats.items_fished||fishStats.total_items_fished||0), '')}
+    ${card('Sea Creature Kills', fmt(fishStats.sea_creature_kills||Object.entries(seaCreatureKills).filter(([k])=>k.includes('sea')).reduce((a,[,v])=>a+v,0)||0), '')}
+    ${card('Treasure Found', fmt(fishStats.items_fished_treasure||0), '')}
+  `;
+
+  // Sea creature kills
+  const seaCreatures = ['sea_creature','catfish','squid','sea_walker','night_squid','sea_guardian','sea_witch','sea_archer','monster_of_the_deep','grim_reaper','water_hydra','sea_emperor','carrot_king','jawbus','thunder','lord_jawbus'];
+  document.getElementById('seaCreatureTable').innerHTML = seaCreatures.map(sc => {
+    const k = seaCreatureKills[sc] || 0;
+    if (!k) return '';
+    return `<tr><td>${fmtMobName(sc)}</td><td>${fmt(k)}</td></tr>`;
+  }).filter(Boolean).join('') || '<tr><td colspan="2" style="color:var(--text-dim)">No sea creature data.</td></tr>';
+
+  // Trophy fishing
+  const trophy = d.trophy_fish || {};
+  const trophyScore = trophy.total_caught || Object.values(trophy).filter(v=>typeof v==='number').reduce((a,b)=>a+b,0);
+  document.getElementById('trophyCards').innerHTML = `
+    ${card('Trophy Score', fmt(trophyScore), '', 'var(--legendary)')}
+    ${card('Total Trophies', fmt(Object.entries(trophy).filter(([k])=>!['total_caught','rewards'].includes(k)).reduce((a,[k,v])=>typeof v==='number'?a+v:a,0)), '')}
+  `;
+
+  document.getElementById('trophyGrid').innerHTML = Object.entries(TROPHY_NAMES).map(([key, name]) => {
+    const bronze  = trophy[`${key}_bronze`]  || 0;
+    const silver  = trophy[`${key}_silver`]  || 0;
+    const gold    = trophy[`${key}_gold`]    || 0;
+    const diamond = trophy[`${key}_diamond`] || 0;
+    if (!bronze && !silver && !gold && !diamond) return '';
+    return `<div class="trophy-item">
+      <div class="trophy-name">${name}</div>
+      <div class="trophy-counts">
+        ${bronze  ? `<span class="trophy-tier t-bronze">B×${bronze}</span>` : ''}
+        ${silver  ? `<span class="trophy-tier t-silver">S×${silver}</span>` : ''}
+        ${gold    ? `<span class="trophy-tier t-gold">G×${gold}</span>`     : ''}
+        ${diamond ? `<span class="trophy-tier t-diamond">D×${diamond}</span>` : ''}
+      </div>
+    </div>`;
+  }).filter(Boolean).join('') || '<p style="color:var(--text-dim);font-size:12px">No trophy fish found.</p>';
+}
+
+// ─── FARMING ───
+function populateFarming(d, gardenData) {
+  const farmSkill = computeLevel(d.player_data?.experience?.SKILL_FARMING||0, SKILL_XP);
+  const jacob = d.jacob2 || {};
+  const medals = jacob.medals_inv || {};
+  const gardenExp = gardenData?.garden_experience || 0;
+  const gardenLevel = computeLevel(gardenExp, [100,300,750,1500,4000,8000,12000,20000,25000,30000,40000,60000,100000]);
+
+  document.getElementById('farmingCards').innerHTML = `
+    ${card('Farming Level', farmSkill, '', 'var(--skill-farming)')}
+    ${card('Garden Level', gardenLevel, '', 'var(--legendary)')}
+    ${card('Plots Unlocked', (gardenData?.unlocked_plots_ids||[]).length + '/24', '')}
+    ${card('Composter Tier', gardenData?.composter_data ? Object.values(gardenData.composter_data.upgrades||{}).reduce((a,b)=>a+b,0) : '—', '')}
+  `;
+
+  // Jacob medals
+  const gold   = medals.gold   || jacob.gold_medals   || 0;
+  const silver = medals.silver || jacob.silver_medals || 0;
+  const bronze = medals.bronze || jacob.bronze_medals || 0;
+  const contests = Object.keys(jacob.contests || {}).length;
+  document.getElementById('jacobCards').innerHTML = `
+    ${card('Contests', fmt(contests), '')}
+    ${card('Gold Medals', fmt(gold), '', 'var(--legendary)')}
+    ${card('Silver Medals', fmt(silver), '', '#c0c0c0')}
+    ${card('Bronze Medals', fmt(bronze), '', '#c87533')}
+  `;
+
+  // Best contest scores
+  const contestList = Object.entries(jacob.contests || {}).sort((a,b)=>(b[1].collected||0)-(a[1].collected||0));
+  const bestByCrop = {};
+  contestList.forEach(([key, data]) => {
+    const crop = key.split(':').pop();
+    if (!bestByCrop[crop] || data.collected > bestByCrop[crop].collected) bestByCrop[crop] = data;
+  });
+  document.getElementById('jacobTable').innerHTML = Object.entries(bestByCrop).slice(0,10).map(([crop, data]) => {
+    const medal = data.claimed_medal || '';
+    const medalHtml = medal === 'gold' ? '🥇' : medal === 'silver' ? '🥈' : medal === 'bronze' ? '🥉' : '—';
+    return `<tr><td>${fmtItemName(crop)}</td><td>${fmt(data.collected||0)}</td><td>${medalHtml}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" style="color:var(--text-dim)">No contest data.</td></tr>';
+
+  // Visitors
+  const visitors = gardenData?.commission_data || {};
+  const totalVisitors = Object.values(visitors).reduce((a,b)=>a+(b.visits||0),0);
+  const uniqueVisitors = Object.keys(visitors).length;
+  document.getElementById('visitorCards').innerHTML = `
+    ${card('Unique Visitors', uniqueVisitors, '')}
+    ${card('Total Visits', fmt(totalVisitors), '')}
+  `;
+}
+
+// ─── PETS ───
+function populatePets(d) {
+  const pets = d.pets_data?.pets || d.pets?.pets || [];
+  const activePet = pets.find(p=>p.active) || null;
+
+  // Sort: active first, then by tier, then by exp
+  const tierOrder = { MYTHIC:0, LEGENDARY:1, EPIC:2, RARE:3, UNCOMMON:4, COMMON:5 };
+  const sorted = [...pets].sort((a,b) => {
+    if (a.active && !b.active) return -1;
+    if (!a.active && b.active) return 1;
+    return (tierOrder[a.tier]||9) - (tierOrder[b.tier]||9);
+  });
+
+  document.getElementById('petCards').innerHTML = `
+    ${card('Pets Owned', pets.length, '')}
+    ${card('Active Pet', activePet ? formatPetName(activePet) : '—', '', activePet ? `var(--${RARITY_CLASS[activePet.tier]||'text-bright'})` : '')}
+    ${card('Mythic Pets', pets.filter(p=>p.tier==='MYTHIC').length, '', 'var(--mythic)')}
+    ${card('Legendary Pets', pets.filter(p=>p.tier==='LEGENDARY').length, '', 'var(--legendary)')}
+  `;
+
+  const PET_EMOJI = { BEE:'🐝',WOLF:'🐺',TIGER:'🐯',LION:'🦁',ENDERMAN:'👾',DRAGON:'🐉',TURTLE:'🐢',RABBIT:'🐇',BAT:'🦇',SHEEP:'🐑',SPIDER:'🕷️',WITHER_SKELETON:'💀',OCELOT:'🐱',BLAZE:'🔥',MAGMA_CUBE:'🟥',GHOUL:'💀',GRANDMA_WOLF:'🐺',ROCK:'🪨',FLYING_FISH:'🐟',SQUID:'🦑',MONKEY:'🐒',ELEPHANT:'🐘',GIRAFFE:'🦒',ARMADILLO:'🦔',MOOSHROOM_COW:'🐄',BABY_YETI:'⛄',PHOENIX:'🦅',ENDER_DRAGON:'🐉',GOLDEN_DRAGON:'🐉',BLACK_CAT:'🐈',SPIRIT:'👻',SCATHA:'🐛',JELLYFISH:'🪼',YETI:'⛄',MEGALODON:'🦈',PARROT:'🦜',HORSE:'🐴' };
+  document.getElementById('petList').innerHTML = sorted.slice(0,12).map(pet => {
+    const level = petLevel(pet);
+    const emoji = PET_EMOJI[pet.type] || '🐾';
+    const rarCls = RARITY_CLASS[pet.tier] || '';
+    const held = pet.heldItem ? fmtItemName(pet.heldItem) : 'None';
+    return `<div class="pet-card">
+      <div class="pet-icon">${emoji}</div>
+      <div class="pet-info">
+        <div class="pet-name ${rarCls}">[Lvl ${level}] ${fmtItemName(pet.type)}</div>
+        <div class="pet-level">${cap(pet.tier||'')} · ${fmt(Math.floor(pet.exp||0))} XP</div>
+        <div class="pet-held">Held: ${held}</div>
+      </div>
+      ${pet.active ? '<div class="pet-active-tag">ACTIVE</div>' : ''}
+    </div>`;
+  }).join('') || '<p style="color:var(--text-dim);font-size:12px">No pets found.</p>';
+}
+
+// ─── MUSEUM ───
+function populateMuseum(museumData) {
+  if (!museumData) {
+    document.getElementById('museumCards').innerHTML = card('Status', 'Private or Unavailable', '', 'var(--text-dim)');
+    document.getElementById('museumWeapons').innerHTML = '<p style="color:var(--text-dim);font-size:12px">Museum data unavailable.</p>';
+    document.getElementById('museumArmor').innerHTML = '';
+    return;
+  }
+
+  const items = museumData.items || {};
+  const special = museumData.special || [];
+  const value = museumData.value || 0;
+  const donated = Object.keys(items).length;
+
+  document.getElementById('museumCards').innerHTML = `
+    ${card('Museum Value', fmtCoins(value), '', 'var(--legendary)')}
+    ${card('Items Donated', donated, '')}
+    ${card('Special Items', special.length, '', 'var(--mythic)')}
+    ${card('Appraised', museumData.appraisal ? 'Yes ✓' : 'No', '', museumData.appraisal ? '#55ff55' : '')}
+  `;
+
+  // Weapons vs armor — we classify by item ID keywords
+  const weaponKeys = Object.keys(items).filter(k => /sword|bow|rod|axe|wand|staff|blade|scythe|mace|hammer/i.test(k));
+  const armorKeys  = special.map(s => s.items?.map(i=>i.id)||[]).flat();
+
+  document.getElementById('museumWeapons').innerHTML = weaponKeys.map(k => `
+    <div class="museum-item museum-donated">
+      <div class="museum-check">✅</div>
+      <div class="museum-name">${fmtItemName(k)}</div>
+    </div>`).join('') || '<p style="color:var(--text-dim);font-size:12px">No weapons donated.</p>';
+
+  document.getElementById('museumArmor').innerHTML = special.map(s => `
+    <div class="museum-item museum-donated">
+      <div class="museum-check">✅</div>
+      <div class="museum-name">${fmtItemName(s.items?.[0]?.id||'')}</div>
+    </div>`).join('') || '<p style="color:var(--text-dim);font-size:12px">No armor sets donated.</p>';
+}
+
+// ─── CHOCOLATE FACTORY ───
+function populateChocolate(d) {
+  const choc = d.events?.easter || d.chocolate_factory || {};
+  const allTime   = choc.total_chocolate_ever_collected || choc.all_time_chocolate || 0;
+  const current   = choc.chocolate || choc.current_chocolate || 0;
+  const prestige  = choc.prestige || 0;
+  const rabbits   = choc.rabbits || {};
+  const employees = choc.employees || {};
+
+  document.getElementById('chocHeader').innerHTML = `
+    <div class="choc-stat"><div class="choc-num">${fmtCoins(allTime)}</div><div class="choc-lbl">All-Time Chocolate</div></div>
+    <div class="choc-div"></div>
+    <div class="choc-stat"><div class="choc-num" style="color:var(--legendary)">${fmtCoins(current)}</div><div class="choc-lbl">Current Chocolate</div></div>
+    <div class="choc-div"></div>
+    <div class="choc-stat"><div class="choc-num" style="color:var(--mythic)">Prestige ${prestige}</div><div class="choc-lbl">Factory Prestige</div></div>
+    <div class="choc-div"></div>
+    <div class="choc-stat"><div class="choc-num" style="color:var(--divine)">${fmt(choc.chocolate_per_second ? Math.round(choc.chocolate_per_second*3600) : 0)}/hr</div><div class="choc-lbl">Production Rate</div></div>
+  `;
+
+  // Rabbit employees
+  const employeeNames = ['bro','cousin','father','mother','grandma','uncle','daughter'];
+  const allRabbits = { ...employees, ...rabbits };
+  document.getElementById('rabbitTable').innerHTML = Object.entries(allRabbits)
+    .filter(([k]) => employeeNames.some(e => k.includes(e)))
+    .map(([name, data]) => {
+      const lv = typeof data === 'object' ? (data.level||data.lv||0) : data;
+      const tier = lv >= 200 ? 'mythic' : lv >= 175 ? 'legendary' : lv >= 140 ? 'epic' : lv >= 100 ? 'rare' : 'common';
+      return `<tr><td class="${tier}">${cap(name.replace(/_/g,' '))}</td><td class="${tier}">Lv ${lv}</td><td class="${tier}">${cap(tier)}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" style="color:var(--text-dim)">No employee data available.</td></tr>';
+
+  // Rabbit rarity breakdown
+  const rabbitList = Object.values(choc.rabbit_collection || choc.rabbits_caught || {});
+  const rarities = { COMMON:0, UNCOMMON:0, RARE:0, EPIC:0, LEGENDARY:0, MYTHIC:0 };
+  rabbitList.forEach(r => { if(rarities[r?.rarity]!==undefined) rarities[r.rarity]++; });
+  document.getElementById('rabbitRarityCards').innerHTML = Object.entries(rarities).map(([r,n]) =>
+    card(cap(r), n, '', `var(--${RARITY_CLASS[r]||'text-bright'})`)).join('');
+}
+
+// ─── RIFT ───
+function populateRift(d) {
+  const rift = d.rift || {};
+  const timePlayed = rift.lifetime_motes_purse || 0; // fallback — rift time isn't directly exposed
+  const motes = rift.motes_purse || d.currencies?.motes_purse || 0;
+  const enigma = rift.enigma || {};
+  const souls = enigma.found_souls?.length || enigma.souls || 0;
+  const vampireStage = rift.slayer_quest?.type === 'vampire' ? rift.slayer_quest.stage : (rift.dreadfarm?.vampire_stage || 0);
+
+  document.getElementById('riftCards').innerHTML = `
+    ${card('Enigma Souls', `${souls} / 42`, '', 'var(--divine)')}
+    ${card('Motes Purse', fmt(motes), '', 'var(--mythic)')}
+    ${card('Vampire Stage', vampireStage || '—', '', 'var(--special)')}
+    ${card('Timecharm', rift.gallery?.available_votes !== undefined ? 'Obtained' : '—', '')}
+  `;
+
+  const pct = Math.min(100,(souls/42)*100);
+  document.getElementById('enigmaTitle').textContent = `Enigma Souls — ${souls} / 42`;
+  document.getElementById('enigmaBar').style.width = pct + '%';
+}
+
+// ═══════════════════════════════════════════════════
+//  DROPDOWN BUILDERS
+// ═══════════════════════════════════════════════════
+function populateProfileDropdown(profiles, activeId) {
+  const dd = document.getElementById('profileDropdown');
+  dd.innerHTML = '<div class="dropdown-header">Profiles</div>';
+  const modeColors = { ironman:'#ff5555', stranded:'#ffaa00', bingo:'#55ff55' };
+  profiles.forEach(p => {
+    const item = document.createElement('div');
+    item.className = 'dropdown-item' + (p.profile_id === activeId ? ' selected' : '');
+    const dot = modeColors[p.game_mode] || '#a5b4fc';
+    item.innerHTML = `
+      <span class="item-dot" style="background:${dot}"></span>
+      <span>${p.cute_name}</span>
+      ${p.selected ? '<span class="item-badge">ACTIVE</span>' : ''}
+      <span style="margin-left:auto;font-size:9px;color:var(--text-dim);text-transform:uppercase">${p.game_mode||'normal'}</span>
+    `;
+    item.onclick = () => switchProfile(p, item);
+    dd.appendChild(item);
+  });
+  const active = profiles.find(p=>p.profile_id===activeId) || profiles[0];
+  document.getElementById('profileLabel').textContent = active.cute_name;
+  document.getElementById('profileActiveDot').className = 'profile-dot' + (active.selected ? '' : ' inactive');
+}
+
+async function switchProfile(profile, el) {
+  document.querySelectorAll('#profileDropdown .dropdown-item').forEach(i=>i.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('profileLabel').textContent = profile.cute_name;
+  closeAllDropdowns();
+  showLoader(`Switching to ${profile.cute_name}…`, '');
+  try {
+    let museumData = null;
+    try { const m = await hypixelFetch(`/skyblock/museum?profile=${profile.profile_id}`); museumData = m.members?.[currentUUID]||null; } catch(e){}
+    let gardenData = null;
+    try { const g = await hypixelFetch(`/skyblock/garden?profile=${profile.profile_id}`); gardenData = g; } catch(e){}
+    currentProfile = profile;
+    currentData = profile.members[currentUUID];
+    const username = document.getElementById('playerName').textContent;
+    populateUI(username, currentUUID, museumData, gardenData);
+    hideLoader();
+  } catch(e) { hideLoader(); showError(e.message); }
+}
+
+function populateCoopDropdown(members, currentUUID) {
+  const dd = document.getElementById('coopDropdown');
+  dd.innerHTML = '<div class="dropdown-header">Co-op Members</div>';
+  const uuids = Object.keys(members);
+  if (uuids.length <= 1) {
+    dd.innerHTML += `<div style="padding:12px 14px;font-size:11px;color:var(--text-dim)">Solo profile.</div>`;
+  } else {
+    uuids.forEach(uuid => {
+      const item = document.createElement('div');
+      item.className = 'coop-member' + (uuid === currentUUID ? ' selected' : '');
+      const lvl = Math.floor((members[uuid].leveling?.experience||0)/100);
+      item.innerHTML = `
+        <div class="member-avatar"><img src="https://mc-heads.net/avatar/${uuid}/26" onerror="this.style.display='none'"></div>
+        <div class="member-info">
+          <div class="member-name">${uuid.slice(0,8)}…</div>
+          <div class="member-level">SkyBlock Lv ${lvl}</div>
+        </div>
+        ${uuid===currentUUID?'<span class="member-you">YOU</span>':''}
+      `;
+      item.onclick = () => switchCoopMember(uuid, item, members);
+      dd.appendChild(item);
+    });
+  }
+  document.getElementById('coopCurrentAvatar').innerHTML = `<img src="https://mc-heads.net/avatar/${currentUUID}/22" onerror="this.style.display='none'">`;
+  document.getElementById('coopCurrentName').textContent = currentUUID.slice(0,8)+'…';
+}
+
+async function switchCoopMember(uuid, el, members) {
+  document.querySelectorAll('.coop-member').forEach(i=>i.classList.remove('selected'));
+  el.classList.add('selected');
+  closeAllDropdowns();
+  currentData = members[uuid];
+  currentUUID = uuid;
+  const username = document.getElementById('playerName').textContent; // best effort
+  let museumData = null;
+  try { const m = await hypixelFetch(`/skyblock/museum?profile=${currentProfile.profile_id}`); museumData = m.members?.[uuid]||null; } catch(e){}
+  populateUI(uuid.slice(0,8), uuid, museumData, null);
+  document.getElementById('coopCurrentAvatar').innerHTML = `<img src="https://mc-heads.net/avatar/${uuid}/22" onerror="this.style.display='none'">`;
+  document.getElementById('coopCurrentName').textContent = uuid.slice(0,8)+'…';
+}
+
+// ═══════════════════════════════════════════════════
+//  NBT DECODER
+// ═══════════════════════════════════════════════════
+async function decodeNBT(base64Data) {
+  if (!base64Data || !window.pako) return null;
+  try {
+    const binary = atob(base64Data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    const decompressed = pako.inflate(bytes);
+    const items = parseNBTItems(decompressed);
+    return items;
+  } catch(e) {
+    console.warn('NBT decode failed:', e);
+    return null;
+  }
+}
+
+function parseNBTItems(buf) {
+  // Parse NBT binary format — simplified parser for item arrays
+  try {
+    let pos = 0;
+    const view = new DataView(buf.buffer || buf);
+
+    function readByte() { return view.getInt8(pos++); }
+    function readShort() { const v = view.getInt16(pos, false); pos+=2; return v; }
+    function readInt() { const v = view.getInt32(pos, false); pos+=4; return v; }
+    function readLong() { pos+=8; return 0; } // simplified
+    function readFloat() { const v = view.getFloat32(pos, false); pos+=4; return v; }
+    function readDouble() { const v = view.getFloat64(pos, false); pos+=8; return v; }
+    function readString() { const len = view.getUint16(pos, false); pos+=2; const str = new TextDecoder().decode(buf.slice(pos, pos+len)); pos+=len; return str; }
+    function readByteArray() { const len = readInt(); pos+=len; return null; }
+    function readIntArray() { const len = readInt(); pos+=len*4; return null; }
+    function readLongArray() { const len = readInt(); pos+=len*8; return null; }
+
+    function readTag(type) {
+      switch(type) {
+        case 1: return readByte();
+        case 2: return readShort();
+        case 3: return readInt();
+        case 4: return readLong();
+        case 5: return readFloat();
+        case 6: return readDouble();
+        case 7: return readByteArray();
+        case 8: return readString();
+        case 9: return readList();
+        case 10: return readCompound();
+        case 11: return readIntArray();
+        case 12: return readLongArray();
+        default: throw new Error(`Unknown tag type: ${type}`);
+      }
+    }
+
+    function readList() {
+      const type = readByte();
+      const len = readInt();
+      const arr = [];
+      for (let i=0;i<len;i++) arr.push(readTag(type));
+      return arr;
+    }
+
+    function readCompound() {
+      const obj = {};
+      while (true) {
+        const type = readByte();
+        if (type === 0) break;
+        const name = readString();
+        obj[name] = readTag(type);
+      }
+      return obj;
+    }
+
+    // Root compound
+    const rootType = readByte();
+    if (rootType !== 10) return null;
+    readString(); // root name
+    const root = readCompound();
+
+    // Items are at root.i (list of compounds)
+    const itemList = root.i;
+    if (!Array.isArray(itemList)) return null;
+
+    return itemList.map(nbtItem => {
+      if (!nbtItem || typeof nbtItem !== 'object') return null;
+      const tag = nbtItem.tag || {};
+      const extra = tag.ExtraAttributes || {};
+      const display = tag.display || {};
+      const id = extra.id || '';
+      const displayName = stripColorCodes(display.Name || id.replace(/_/g,' ').toLowerCase());
+      const rarity = getRarityFromLore(display.Lore || []);
+      const count = nbtItem.Count || 1;
+      const texture = id ? `https://sky.shiiyu.moe/api/item/${id}` : null;
+      return id ? { id, displayName, rarity, count, extra, texture } : null;
+    });
+  } catch(e) {
+    console.warn('NBT parse error:', e.message);
+    return null;
+  }
+}
+
+function stripColorCodes(str) {
+  return (str||'').replace(/§[0-9a-fklmnor]/gi,'');
+}
+
+function getRarityFromLore(lore) {
+  if (!Array.isArray(lore)) return '';
+  const rarities = ['COMMON','UNCOMMON','RARE','EPIC','LEGENDARY','MYTHIC','DIVINE','SPECIAL'];
+  for (const line of lore) {
+    const clean = stripColorCodes(line||'').toUpperCase();
+    for (const r of rarities) { if (clean.includes(r)) return r; }
+  }
+  return '';
+}
+
+// ═══════════════════════════════════════════════════
+//  SKILL / LEVEL HELPERS
+// ═══════════════════════════════════════════════════
+function computeLevel(xp, table) {
+  let level = 0;
+  let cumulative = 0;
+  for (let i=0;i<table.length;i++) {
+    cumulative += table[i];
+    if (xp >= cumulative) level = i+1;
+    else break;
+  }
+  return level;
+}
+
+function computeAllSkills(d) {
+  const exp = d.player_data?.experience || {};
+  const skills = ['farming','mining','combat','foraging','fishing','enchanting','alchemy','taming','carpentry','runecrafting'];
+  return skills.map(s => ({
+    id: s,
+    xp: exp[`SKILL_${s.toUpperCase()}`] || 0,
+    level: computeLevel(exp[`SKILL_${s.toUpperCase()}`]||0, SKILL_XP),
+  }));
+}
+
+function petLevel(pet) {
+  const xp = pet.exp || 0;
+  const tier = pet.tier || 'COMMON';
+  const XP_TABLES = {
+    COMMON:    [100,210,440,920,1930,3930,7930,15930,24430,37030,54930,79330,111530,152430,205030,270000,350000,445000,555000,690000,855000,1050000,1280000,1545000,1860000,2230000,2665000,3160000,3730000,4395000,5175000,6105000,7202500,8507500,10047500,11817500,13887500,16287500,19087500,22367500,26187500,30667500,35917500,41967500,48867500,56812500,65812500,76112500,87712500,100612500],
+    UNCOMMON:  [175,365,760,1600,3295,6695,13695,27695,42445,64445,95945,139445,196945,271345,362545,479000,621000,791000,986000,1236000,1516000,1861000,2276000,2771000,3346000,4046000,4846000,5796000,6921000,8221000,9721000,11521000,13671000,16171000,19121000,22721000,26921000,31771000,37421000,43871000,51371000,60171000,70621000,82421000,95771000,111421000,129421000,149921000,173221000,199821000],
+  };
+  const table = XP_TABLES[tier] || XP_TABLES.COMMON;
+  return computeLevel(xp, table) + 1;
+}
+
+function formatPetName(pet) {
+  return fmtItemName(pet.type||'');
+}
+
+// ═══════════════════════════════════════════════════
+//  FORMATTING HELPERS
+// ═══════════════════════════════════════════════════
+function fmt(n) {
+  if (n === undefined || n === null) return '—';
+  return Number(n).toLocaleString();
+}
+function fmtK(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return fmt(n);
+}
+function fmtCoins(n) {
+  if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return fmt(n);
+}
+function fmtTime(ms) {
+  if (!ms) return '—';
+  const s = Math.floor(ms/1000);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+function cap(s) { return (s||'').charAt(0).toUpperCase()+s.slice(1).toLowerCase(); }
+function fmtItemName(id) {
+  return (id||'').replace(/_/g,' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()).replace(/:\d+$/,'');
+}
+function fmtMobName(id) { return fmtItemName(id); }
+function rarColor(rarity) {
+  const map = { COMMON:'var(--common)',UNCOMMON:'var(--uncommon)',RARE:'var(--rare)',EPIC:'var(--epic)',LEGENDARY:'var(--legendary)',MYTHIC:'var(--mythic)',DIVINE:'var(--divine)' };
+  return map[rarity] || 'var(--text-bright)';
+}
+function card(label, value, sub='', color='') {
+  return `<div class="card">
+    <div class="card-label">${label}</div>
+    <div class="card-value" ${color?`style="color:${color}"`:''}>${value}</div>
+    ${sub ? `<div class="card-sub">${sub}</div>` : ''}
+  </div>`;
+}
+const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+function toRoman(n) { return ROMAN[n-1] || n; }
+
+// ═══════════════════════════════════════════════════
+//  LOADER / ERROR
+// ═══════════════════════════════════════════════════
+let loaderInterval = null;
+function showLoader(text, sub) {
+  document.getElementById('loaderText').textContent = text;
+  document.getElementById('loaderSub').textContent = sub;
+  document.getElementById('loaderOverlay').classList.add('visible');
+}
+function setLoaderText(text, sub) {
+  document.getElementById('loaderText').textContent = text;
+  document.getElementById('loaderSub').textContent = sub;
+}
+function hideLoader() { document.getElementById('loaderOverlay').classList.remove('visible'); }
+
+let errTimeout = null;
+function showError(msg) {
+  document.getElementById('errorText').textContent = msg;
+  document.getElementById('errorBanner').classList.add('visible');
+  clearTimeout(errTimeout);
+  errTimeout = setTimeout(dismissError, 6000);
+}
+function dismissError() { document.getElementById('errorBanner').classList.remove('visible'); }
+
+// ═══════════════════════════════════════════════════
+//  NAV
+// ═══════════════════════════════════════════════════
+function showPage(pageId, el) {
+  if (!currentData) return;
+  document.querySelectorAll('.page').forEach(p => { p.style.display='none'; p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = document.getElementById('page-' + pageId);
+  pg.style.display = 'flex'; pg.classList.add('active');
+  el.classList.add('active');
+}
+function showInner(pageId, tabId, el) {
+  const page = document.getElementById('page-' + pageId);
+  page.querySelectorAll('.inner-page').forEach(p => p.classList.remove('active'));
+  page.querySelectorAll('.inner-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(pageId + '-' + tabId).classList.add('active');
+  el.classList.add('active');
+}
+function toggleDropdown(ddId, btn) {
+  const dd = document.getElementById(ddId);
+  const isOpen = dd.classList.contains('open');
+  closeAllDropdowns();
+  if (!isOpen) { dd.classList.add('open'); btn.classList.add('open'); }
+}
+function closeAllDropdowns() {
+  document.querySelectorAll('.profile-dropdown,.coop-dropdown').forEach(d=>d.classList.remove('open'));
+  document.querySelectorAll('.profile-select-btn,.coop-btn').forEach(b=>b.classList.remove('open'));
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.profile-select-wrap') && !e.target.closest('.coop-wrap')) closeAllDropdowns();
+});
+</script>
+</body>
+</html>
