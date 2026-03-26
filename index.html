@@ -958,15 +958,20 @@ function saveApiKey() {
 async function triggerSearch() {
   const input = document.getElementById('usernameInput');
   const username = input.value.trim();
-  if (!username) { input.style.animation='none'; input.offsetHeight; input.style.animation='shake 0.35s ease'; return; }
+  if (!username) { 
+    input.style.animation='none'; 
+    input.offsetHeight; 
+    input.style.animation='shake 0.35s ease'; 
+    return; 
+  }
+
+  // Force hide empty state immediately
+  document.getElementById('emptyState').style.display = 'none';
 
   showLoader(`Fetching ${username}…`, 'Looking up UUID via Mojang');
   try {
-    // Step 1: Mojang UUID lookup
     const uuid = await getUUID(username);
     setLoaderText('Loading SkyBlock profiles…', 'Connecting to Hypixel API');
-
-    // Step 2: Get all profiles
     const profilesRes = await hypixelFetch(`/skyblock/profiles?uuid=${uuid}`);
     if (!profilesRes.profiles || profilesRes.profiles.length === 0)
       throw new Error('This player has no SkyBlock profiles.');
@@ -974,15 +979,14 @@ async function triggerSearch() {
     allProfiles = profilesRes.profiles;
     currentUUID = uuid;
 
-    // Pick the active (selected) profile
     const active = allProfiles.find(p => p.selected) || allProfiles[0];
-
     setLoaderText('Building profile view…', `Loading ${active.cute_name}`);
     await loadProfile(active, uuid, username);
     hideLoader();
 
   } catch (err) {
     hideLoader();
+    document.getElementById('emptyState').style.display = 'flex'; // restore on error
     showError(err.message || 'Something went wrong. Try again.');
   }
 }
@@ -1019,7 +1023,7 @@ async function getUUID(username) {
 async function hypixelFetch(path) {
   const separator = path.includes('?') ? '&' : '?';
   const target = `https://api.hypixel.net/v2${path}${separator}key=${API_KEY}`;
-  const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(target)}`);
+  const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`);
   if (res.status === 403) throw new Error('Invalid API key. Click the key icon to re-enter it.');
   if (res.status === 429) throw new Error('Rate limited by Hypixel. Please wait a moment.');
   if (!res.ok) throw new Error(`Hypixel API error (${res.status}).`);
